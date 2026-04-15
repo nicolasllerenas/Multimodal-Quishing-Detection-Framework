@@ -1,0 +1,50 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
+venv/
+env/
+.env
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Data (too large for git — download separately)
+data/raw/*.csv
+data/raw/*.zip
+data/raw/*.pickle
+data/raw/*.png
+data/raw/**/*.png
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Large model files
+*.pth
+*.pt
+*.h5
+*.onnx
+
+# LaTeX build
+paper/*.aux
+paper/*.log
+paper/*.out
+paper/*.synctex.gz
+paper/*.fdb_latexmk
+paper/*.fls
+paper/*.bbl
+paper/*.blg
