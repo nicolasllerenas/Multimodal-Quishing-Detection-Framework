@@ -239,33 +239,37 @@ This spatial analysis suggests that CNN-based models, which can learn position-d
 
 \subsection{Classification Performance}
 
-Table~\ref{tab:classification} reports cross-validated classification results on the CIC Trap4Phish dataset. We sampled 3,000 images per class (6,000 total) for feature extraction, with stratified 5-fold cross-validation.
+Table~\ref{tab:classification} reports cross-validated classification results on both datasets. For the CIC corpus, we sampled 2,000 images per class (4,000 total) and extracted all 25 structural features. For the Trad dataset, we evaluated all 9,987 samples using the same feature set. All results use stratified 5-fold cross-validation.
 
 \begin{table}[t]
-\caption{Classification Results on CIC Trap4Phish (5-Fold CV)}
+\caption{Classification Results (5-Fold CV)}
 \label{tab:classification}
 \centering
 \renewcommand{\arraystretch}{1.1}
-\begin{tabular}{lcccc}
+\begin{tabular}{llcccc}
 \toprule
-\textbf{Model} & \textbf{AUC} & \textbf{Precision} & \textbf{Recall} & \textbf{F1} \\
+\textbf{Dataset} & \textbf{Model} & \textbf{AUC} & \textbf{Prec.} & \textbf{Rec.} & \textbf{F1} \\
 \midrule
-Random Forest & 0.XXX & 0.XXX & 0.XXX & 0.XXX \\
-XGBoost & 0.XXX & 0.XXX & 0.XXX & 0.XXX \\
-LightGBM & 0.XXX & 0.XXX & 0.XXX & 0.XXX \\
+\multirow{3}{*}{Trad} & Random Forest & 0.813 & 0.794 & 0.659 & 0.720 \\
+ & XGBoost & 0.810 & 0.785 & 0.664 & 0.720 \\
+ & LightGBM & 0.808 & 0.771 & 0.670 & 0.717 \\
+\midrule
+\multirow{3}{*}{CIC} & Random Forest & 0.655 & 0.626 & 0.574 & 0.599 \\
+ & XGBoost & 0.630 & 0.590 & 0.566 & 0.578 \\
+ & LightGBM & 0.627 & 0.595 & 0.564 & 0.579 \\
 \bottomrule
 \end{tabular}
-\vspace{2pt}
-{\footnotesize\textit{Note: Results to be populated upon completion of experimental runs on the full pipeline. Trad et al.\ reported AUC = 0.9133 with XGBoost on their dataset using raw pixel features; our feature-engineered approach targets comparable or improved performance.}}
 \end{table}
+
+On the Trad dataset, all three classifiers achieve AUC values above 0.80 using our 25 engineered features. This falls below the 0.9133 reported by Trad and Chehab, which is expected: their approach uses all 4,761 raw pixel values as features, providing the classifier with direct access to every module position. Our 25 features compress this information into interpretable descriptors, trading some discriminative power for explainability and generalizability. The gap between raw-pixel and engineered-feature approaches quantifies the cost of interpretability, and we argue that this trade-off is worthwhile for deployed systems where analysts need to understand detection decisions.
+
+On the CIC dataset, performance drops notably (AUC $\approx$ 0.65). This degradation has a clear cause: the CIC images are variable-resolution grayscale PNGs, not standardized binary matrices. Features like transition counts and run-length statistics are sensitive to image resolution and binarization thresholds, making them less reliable when QR codes span different versions and physical sizes. This result underscores a key limitation of handcrafted structural features and motivates a CNN-based alternative that can learn resolution-invariant representations directly from pixels.
 
 \subsection{Cross-Dataset Generalization}
 
-A critical question for any detection system is whether patterns learned from one dataset transfer to another. We trained a Random Forest on features extracted from CIC samples and evaluated it on the entire Trad et al.\ dataset without any fine-tuning. The shared feature set comprises the 20 features computable from both PNG images and binary matrices (geometric features that depend on absolute pixel dimensions were excluded).
+We attempted cross-dataset transfer by training a Random Forest on CIC-extracted features and testing on the full Trad dataset. The classifier achieved an AUC of only 0.41, effectively predicting all samples as malicious. This failure is not surprising: the feature distributions differ substantially between grayscale PNG images and binary module matrices, even when computed using identical formulas. Transition counts in a 69$\times$69 binary matrix occupy an entirely different numerical range than those in a 200$\times$200 grayscale image, and standardization alone cannot bridge this gap.
 
-This cross-dataset evaluation serves as a proxy for real-world deployment, where the training data and the operational data inevitably differ in provenance, QR version distribution, and URL characteristics. Maintaining discriminative power across datasets would indicate that the structural patterns we exploit are intrinsic to the QR encoding process rather than artifacts of a particular data collection pipeline.
-
-Preliminary analysis confirms directional consistency: features that increase for malicious codes in the CIC dataset (module density, vertical transitions, data region density) show the same directional shift in the Trad dataset, and vice versa for features that decrease (horizontal transitions). Formal cross-dataset AUC values will be reported in the final version.
+This negative result is itself informative. It demonstrates that structural features, while statistically significant \textit{within} each dataset, do not automatically transfer across representation formats. Effective cross-dataset generalization requires either (a)~a normalization scheme that maps features to a format-invariant space, or (b)~a learned representation (e.g., from a CNN) that abstracts away low-level differences. We pursue the latter direction in our ongoing work (Section~\ref{sec:conclusion}).
 
 \subsection{Attack Taxonomy}
 
