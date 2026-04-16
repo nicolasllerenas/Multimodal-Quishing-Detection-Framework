@@ -36,50 +36,40 @@ This insight, first demonstrated by Trad & Chehab (2025) using classical ML, is 
 
 ## Architecture
 
+Q-Shield uses a **two-phase training strategy** combining self-supervised contrastive learning with supervised multimodal classification.
+
+### Phase 1: Siamese Pretraining (Contrastive Learning)
+
 ```
-                    ┌─────────────────────────────────┐
-                    │        INPUT: QR Image + SMS     │
-                    └──────────┬──────────┬────────────┘
-                               │          │
-                    ┌──────────▼──┐  ┌────▼───────────┐
-                    │ QR IMAGE    │  │ SMS TEXT        │
-                    │ (grayscale) │  │ (raw string)    │
-                    └──────┬──────┘  └──────┬──────────┘
-                           │                │
-                ┌──────────▼──────────┐  ┌──▼──────────────────┐
-                │  VISUAL BRANCH      │  │  SEMANTIC BRANCH     │
-                │  MobileNetV2        │  │  DistilBERT          │
-                │  (pretrained,       │  │  Multilingual        │
-                │   fine-tuned)       │  │  (fine-tuned)        │
-                │                     │  │                      │
-                │  Input: 224x224     │  │  Input: tokenized    │
-                │  Output: 1280-d     │  │  Output: 768-d       │
-                └──────────┬──────────┘  └──────────┬───────────┘
-                           │                        │
-                    ┌──────▼────────────────────────▼──────┐
-                    │         LATE FUSION LAYER             │
-                    │    Concatenation: [1280 + 768]        │
-                    │    Dense(2048) -> ReLU -> Dropout(0.3) │
-                    │    Dense(256) -> ReLU -> Dropout(0.3)  │
-                    │    Dense(1) -> Sigmoid                 │
-                    └──────────────────┬───────────────────┘
-                                       │
-                    ┌──────────────────▼───────────────────┐
-                    │     OUTPUT: P(phishing) in [0, 1]    │
-                    │                                       │
-                    │     XAI Layer:                        │
-                    │     - Grad-CAM: visual attention map  │
-                    │     - SHAP: feature importance        │
-                    └──────────────────────────────────────┘
+    QR_anchor ──────┐
+                    ├── MobileNetV2 (shared weights) ──> emb_a ─┐
+    QR_pair ────────┘                                    emb_b ─┤
+                                                                ├─ Contrastive Loss
+                        "Learn what makes QR codes               │  L = y*d^2 + (1-y)*max(0, m-d)^2
+                         similar or different"                   └──────────────────────────
+```
+
+The Siamese backbone learns a **128-dimensional embedding space** where benign QR codes cluster together and malicious QR codes form a separate cluster, based purely on structural patterns.
+
+### Phase 2: Multimodal Fine-Tuning (Supervised Classification)
+
+```
+    QR Image ──> Siamese MobileNetV2 ──> QR Embedding (128-d) ─┐
+                 (pretrained Phase 1)                            ├── Concat ──> FC ──> Sigmoid
+    SMS Text ──> DistilBERT Multilingual ──> Text Emb (768-d) ──┘         |
+                                                                    XAI Layer:
+                                                                    Grad-CAM + SHAP
 ```
 
 ### Why This Architecture?
 
 | Decision | Justification | Reference |
 |----------|--------------|-----------|
-| MobileNetV2 (not ResNet) | 3.4M params vs 25.6M — deployable on mobile | Sandler et al. (2018) |
-| DistilBERT (not BERT-base) | 40% smaller, 60% faster, 97% performance | Sanh et al. (2019) |
-| Late Fusion (not Early) | Visual and semantic features are orthogonal signals | Bountakas et al. (2023) |
+| Siamese Network | Learns *what differs* between benign/malicious QR structure; works with limited data | Chopra et al. (2005) |
+| MobileNetV2 backbone | 3.4M params vs 25.6M — deployable on mobile | Sandler et al. (2018) |
+| Contrastive pretraining | Learns resolution-invariant embeddings; solves cross-dataset transfer | Chen et al. (2020) |
+| DistilBERT (not BERT) | 40% smaller, 60% faster, 97% of BERT performance | Sanh et al. (2019) |
+| Late Fusion | Visual and semantic features are orthogonal signals | Bountakas et al. (2023) |
 | No QR Decoding | Zero-risk scanning — payload never executed | Trad & Chehab (2025) |
 | Grad-CAM + SHAP | Full interpretability for both modalities | Selvaraju et al. (2017) |
 
