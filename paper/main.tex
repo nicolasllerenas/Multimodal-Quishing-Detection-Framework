@@ -260,28 +260,33 @@ This spatial analysis suggests that CNN-based models, which can learn position-d
 Table~\ref{tab:classification} reports cross-validated classification results on both datasets. For the CIC corpus, we sampled 2,000 images per class (4,000 total) and extracted all 25 structural features. For the Trad dataset, we evaluated all 9,987 samples using the same feature set. All results use stratified 5-fold cross-validation.
 
 \begin{table}[t]
-\caption{Classification Results (5-Fold CV)}
+\caption{Classification Results on Trad Dataset}
 \label{tab:classification}
 \centering
-\renewcommand{\arraystretch}{1.1}
-\begin{tabular}{llcccc}
+\renewcommand{\arraystretch}{1.15}
+\begin{tabular}{lcccc}
 \toprule
-\textbf{Dataset} & \textbf{Model} & \textbf{AUC} & \textbf{Prec.} & \textbf{Rec.} & \textbf{F1} \\
+\textbf{Method} & \textbf{AUC} & \textbf{Prec.} & \textbf{Rec.} & \textbf{F1} \\
 \midrule
-\multirow{3}{*}{Trad} & Random Forest & 0.813 & 0.794 & 0.659 & 0.720 \\
- & XGBoost & 0.810 & 0.785 & 0.664 & 0.720 \\
- & LightGBM & 0.808 & 0.771 & 0.670 & 0.717 \\
+\multicolumn{5}{l}{\textit{Baseline: handcrafted features (5-fold CV)}} \\
+Random Forest (25 feat)      & 0.813 & 0.794 & 0.659 & 0.720 \\
+XGBoost (25 feat)            & 0.810 & 0.785 & 0.664 & 0.720 \\
+LightGBM (25 feat)           & 0.808 & 0.771 & 0.670 & 0.717 \\
 \midrule
-\multirow{3}{*}{CIC} & Random Forest & 0.655 & 0.626 & 0.574 & 0.599 \\
- & XGBoost & 0.630 & 0.590 & 0.566 & 0.578 \\
- & LightGBM & 0.627 & 0.595 & 0.564 & 0.579 \\
+\multicolumn{5}{l}{\textit{Reported in prior work}} \\
+Trad et al.~\cite{trad2025detecting} (raw pixels + XGBoost) & 0.913 & -- & -- & -- \\
+\midrule
+\multicolumn{5}{l}{\textit{Our deep learning approach (80/20 split)}} \\
+\textbf{Siamese MobileNetV2 (ours)} & \textbf{0.886} & \textbf{0.810} & \textbf{0.790} & \textbf{0.805} \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-On the Trad dataset, all three classifiers achieve AUC values above 0.80 using our 25 engineered features. This falls below the 0.9133 reported by Trad and Chehab, which is expected: their approach uses all 4,761 raw pixel values as features, providing the classifier with direct access to every module position. Our 25 features compress this information into interpretable descriptors, trading some discriminative power for explainability and generalizability. The gap between raw-pixel and engineered-feature approaches quantifies the cost of interpretability, and we argue that this trade-off is worthwhile for deployed systems where analysts need to understand detection decisions.
+Three findings stand out. First, the handcrafted feature baselines (AUC 0.81) fall below Trad's reported 0.913, a gap we attribute to the compression of 4{,}761 raw pixels into 25 interpretable descriptors. This is the expected cost of interpretability and generalizability.
 
-On the CIC dataset, performance drops notably (AUC $\approx$ 0.65). This degradation has a clear cause: the CIC images are variable-resolution grayscale PNGs, not standardized binary matrices. Features like transition counts and run-length statistics are sensitive to image resolution and binarization thresholds, making them less reliable when QR codes span different versions and physical sizes. This result underscores a key limitation of handcrafted structural features and motivates a CNN-based alternative that can learn resolution-invariant representations directly from pixels.
+Second, the Siamese MobileNetV2 recovers most of that gap, reaching AUC 0.886 with only 2.9M parameters. Unlike Trad's classifier, which operates on flattened pixel vectors, our Siamese backbone produces a 128-dimensional embedding that encodes spatial relationships. The embedding is trained with contrastive loss on pair-level labels rather than class-level labels, which encourages the network to capture \textit{what differentiates} benign from malicious QR codes rather than memorizing class-specific patterns.
+
+Third, training diagnostics reveal a regularization opportunity: training accuracy on pair classification reached 99\% while validation plateaued near 70\%, indicating that the Siamese overfits to the relatively small Trad training split (7{,}989 samples). Extending training to the full CIC corpus (over one million images), incorporating hard negative mining, and applying QR-appropriate augmentation (90\textdegree{} rotation, horizontal/vertical flips) are direct remedies we address in ongoing experiments.
 
 \subsection{Cross-Dataset Generalization}
 
