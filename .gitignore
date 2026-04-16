@@ -21,6 +21,8 @@ data/raw/*.csv
 data/raw/*.zip
 data/raw/*.pickle
 data/raw/*.png
+# Exception: small sample zips allowed
+!data/raw/CIC_QR_sample_1000.zip
 data/raw/**/*.png
 
 # OS
