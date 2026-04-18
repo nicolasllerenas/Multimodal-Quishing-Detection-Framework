@@ -262,17 +262,53 @@ The combined setup (CV3) is Q-Shield's main operating regime and establishes the
 
 \subsection{Grad-CAM Attention Maps}
 
-Figure~\ref{fig:gradcam} (produced from notebook 07) shows Grad-CAM attention maps~\cite{selvaraju2017grad} overlaid on sample benign and phishing QR codes. For benign samples, attention distributes relatively uniformly across the QR matrix. For phishing samples, attention concentrates on data-region modules away from the three finder patterns at the top-left, top-right, and bottom-left corners. This is consistent with our hypothesis that the discriminative signal lies in payload-dependent module arrangements rather than in the fixed structural patterns shared across all QR codes.
+We apply Grad-CAM~\cite{selvaraju2017grad} to the final inverted residual block of the MobileNetV2 backbone to visualize which regions of the QR matrix drive the classifier's decisions. Figure~\ref{fig:gradcam} shows representative samples: six benign QR codes above and six phishing QR codes below, each accompanied by its Grad-CAM heatmap.
 
-The aggregate attention map averaged over 200 samples per class makes this pattern more visible: the difference map (phishing minus benign) highlights a concentration of attention in the lower-right quadrant, where data codewords for longer URLs expand.
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{figures/xai/fig5_gradcam_samples.png}
+\caption{Grad-CAM attention maps on representative validation samples. Top two rows: benign QR codes and their attention overlays ($P(\text{phish}) \in [0.17, 0.42]$). Bottom two rows: phishing QR codes and attention overlays ($P(\text{phish}) \in [0.76, 0.89]$). Finder patterns at the three anchor corners receive consistently low attention, indicating that the model focuses on payload-dependent data modules.}
+\label{fig:gradcam}
+\end{figure}
+
+Two qualitative patterns emerge. First, the fixed structural patterns of the QR standard---the three finder patterns at the top-left, top-right, and bottom-left corners---receive uniformly low attention across both classes (visible as dark blue regions in the heatmaps). This is the expected behavior: these patterns are class-invariant, so a well-trained classifier should learn to discount them. Second, attention for both classes concentrates on the data-region modules that carry the encoded payload. This confirms that the model's decisions are driven by payload-dependent structure rather than by memorizing positional biases.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{figures/xai/fig6_gradcam_aggregate.png}
+\caption{Class-level aggregate attention maps (mean of 200 Grad-CAM heatmaps per class). \textbf{Left}: benign QRs concentrate attention on the left mid-region. \textbf{Center}: phishing QRs distribute attention more broadly with a right-side bias. \textbf{Right}: per-pixel difference (phishing $-$ benign) highlights a center-right positive region and a left negative region.}
+\label{fig:gradcam_agg}
+\end{figure}
+
+Averaging Grad-CAM maps over 200 samples per class (Figure~\ref{fig:gradcam_agg}) reveals a more subtle class-level pattern. Benign QRs concentrate attention on the \textit{left} mid-region of the image, whereas phishing QRs attract attention to the \textit{center-right} region, and the difference map highlights a positive region (red) in the center-right and a negative region (blue) on the left. This asymmetry is consistent with longer phishing URLs pushing additional data codewords into module positions that benign URLs do not populate. Notably, the finder patterns remain dark in both per-class averages, corroborating that the model does not rely on positional artifacts.
 
 \subsection{SHAP Analysis on Embedding Dimensions}
 
-Treating the 128-dimensional Siamese embedding as a feature vector and the classifier head as the prediction function, we apply kernel SHAP~\cite{lundberg2017unified} to attribute each embedding dimension's contribution to individual predictions. Approximately 20 of 128 dimensions account for the majority of predictive signal, suggesting that the embedding is highly over-parameterized for binary classification and could potentially be pruned for deployment.
+Treating the 128-dimensional Siamese embedding as a feature vector and the classifier head as the prediction function, we apply kernel SHAP~\cite{lundberg2017unified} to attribute each embedding dimension's contribution to individual predictions. The top-20 dimensions by mean absolute SHAP value concentrate the majority of the predictive signal, with a clear gradient from the most important dimension (mean $|\text{SHAP}| \approx 0.016$) down to the 20th (around $0.005$). The remaining 108 dimensions contribute negligibly. This suggests that the embedding is highly over-parameterized for binary classification, and a pruned 32- or 64-dimensional projection head would likely preserve performance while further reducing the memory footprint, which is valuable for mobile deployment.
 
 \subsection{Embedding Space Separation}
 
-The ratio of inter-class to intra-class embedding distance, measured on the validation set, is greater than 1.0, confirming that the contrastive objective succeeds in separating the two classes in embedding space. Complete numerical values appear in notebook 07.
+We quantify the geometric separation induced by contrastive learning by comparing intra-class and inter-class Euclidean distances in the 128-dimensional embedding space, computed on the validation set (Table~\ref{tab:distances}). The mean benign-to-phishing distance is $0.928$, roughly twice as large as the mean within-class distances ($0.501$ for benign pairs and $0.458$ for phishing pairs), yielding an inter- to intra-class separation ratio of approximately $1.94$.
+
+\begin{table}[t]
+\caption{Embedding Distance Statistics (Validation Set)}
+\label{tab:distances}
+\centering
+\renewcommand{\arraystretch}{1.15}
+\begin{tabular}{lc}
+\toprule
+\textbf{Pair type} & \textbf{Mean Euclidean distance} \\
+\midrule
+Benign--Benign & 0.501 \\
+Phishing--Phishing & 0.458 \\
+Benign--Phishing & \textbf{0.928} \\
+\midrule
+Separation ratio (inter/intra) & \textbf{1.94} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Two observations deserve attention. First, the separation ratio greater than 1 confirms that contrastive training pulls same-class samples together and pushes different-class samples apart, as intended. Second, the phishing-phishing mean distance is \textit{smaller} than the benign-benign one, meaning that phishing QR codes are more tightly clustered in embedding space than benign ones. A plausible interpretation is that phishing URLs share structural regularities (common URL shorteners, redirect chains, query parameter patterns) that induce similar module distributions across different samples, whereas benign URLs span a more diverse distribution.
 
 %% ============================================================
 \section{Discussion, Limitations, and Future Work}
