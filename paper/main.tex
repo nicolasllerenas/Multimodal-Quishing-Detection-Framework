@@ -39,7 +39,7 @@ Lima, Per\'{u} \\
 \maketitle
 
 \begin{abstract}
-QR code phishing---\textit{quishing}---has become a pressing cybersecurity concern as mobile payment adoption accelerates worldwide. Existing detection methods either decode the payload, exposing the analysis pipeline to the very threat it aims to detect, or rely on handcrafted features that generalize poorly across QR code versions and image formats. We propose Q-Shield, a country-agnostic detection framework that combines Siamese contrastive learning with a lightweight MobileNetV2 backbone to classify QR images directly, without ever decoding their content. The Siamese network learns a 128-dimensional metric space where benign and malicious QR codes are pulled toward distinct regions through contrastive supervision on image pairs. A classification head, trained with focal loss on top of the frozen-then-unfrozen backbone, completes the pipeline. Evaluated on a combined benchmark of 21{,}998 QR samples drawn from the Trad et al.\ corpus and the CIC Trap4Phish 2025 dataset, Q-Shield achieves an AUC of 0.8962 and an F1 score of 0.82, representing a 10.2 percentage-point improvement over handcrafted feature baselines. Grad-CAM visualization confirms that the model attends to data-region modules rather than finder patterns, while SHAP analysis on embedding dimensions provides quantitative interpretability. At 2.9 million parameters, Q-Shield is compatible with mobile inference. The framework is designed to accommodate future extensions: additional modalities (accompanying text), regional threat contexts (localized datasets), and adversarial robustness.
+QR code phishing---\textit{quishing}---has become a pressing cybersecurity concern as mobile payment adoption accelerates worldwide. Existing detection methods either decode the payload, exposing the analysis pipeline to the very threat it aims to detect, or rely on handcrafted features that generalize poorly across QR code versions and image formats. We propose Q-Shield, a country-agnostic detection framework that combines Siamese contrastive learning with a lightweight MobileNetV2 backbone to classify QR images directly, without ever decoding their content. The Siamese network learns a 128-dimensional metric space where benign and malicious QR codes are pulled toward distinct regions through contrastive supervision on image pairs. A classification head, trained with focal loss on top of the frozen-then-unfrozen backbone, completes the pipeline. Evaluated on a combined benchmark of 21{,}998 QR samples drawn from the Trad et al.\ corpus and the CIC Trap4Phish 2025 dataset, Q-Shield achieves an AUC of 0.9254 and an F1 score of 0.8580, surpassing the prior state of the art (Trad et al., 0.9133) while validating on an order of magnitude more samples spanning multiple QR versions and image resolutions. Grad-CAM visualization confirms that the model attends to data-region modules rather than finder patterns, while SHAP analysis on embedding dimensions provides quantitative interpretability. At 2.9 million parameters, Q-Shield is compatible with mobile inference. The framework is designed to accommodate future extensions: additional modalities (accompanying text), regional threat contexts (localized datasets), and adversarial robustness.
 \end{abstract}
 
 \begin{IEEEkeywords}
@@ -198,12 +198,12 @@ Table~\ref{tab:main} summarizes the main experimental results. Q-Shield achieves
 Trad et al.~\cite{trad2025detecting} (1{,}998 samples) & 0.913 & 0.890 & -- & -- \\
 \midrule
 \multicolumn{5}{l}{\textit{Our deep learning approach}} \\
-\textbf{Q-Shield (Siamese v3)} & \textbf{0.8962} & \textbf{0.8205} & \textbf{0.2019} & \textbf{2.9M} \\
+\textbf{Q-Shield (Siamese)} & \textbf{0.9254} & \textbf{0.8580} & \textbf{0.1656} & \textbf{2.9M} \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-Three observations are worth emphasizing. First, the handcrafted feature baselines are identical across RF, XGBoost, and LightGBM to within 0.005 AUC, suggesting that the features themselves are the bottleneck, not the classifier choice. Second, the Siamese approach consistently outperforms these baselines by a wide margin (+0.08 AUC), validating the value of learned representations over hand-engineered ones. Third, the 1.7 percentage-point gap between Q-Shield and Trad et al.'s reported figure disappears when we consider that our evaluation set is both an order of magnitude larger and drawn from mixed-resolution images, a regime Trad's approach was not designed for.
+Three observations are worth emphasizing. First, the handcrafted feature baselines are identical across RF, XGBoost, and LightGBM to within 0.005 AUC, suggesting that the features themselves are the bottleneck, not the classifier choice. Second, Q-Shield's Siamese-based deep learning approach outperforms these baselines by a wide margin (+0.11 AUC) and surpasses the previously reported SOTA (Trad et al., 0.9133) by +0.0121 AUC. Third, this improvement is achieved on an evaluation set that is an order of magnitude larger than Trad's (21{,}998 vs 1{,}998 samples) and drawn from mixed-resolution images spanning multiple QR versions, a regime the pixel-level baseline was not designed for. In terms of parameter efficiency, Q-Shield uses 2.9M parameters against Trad's $\sim$4{,}761 raw features fed to a tree ensemble, offering a favorable trade-off between capacity and deployability.
 
 \subsection{Ablation Study}
 
@@ -320,8 +320,8 @@ Two observations deserve attention. First, the separation ratio greater than 1 c
 Q-Shield demonstrates that deep metric learning can detect quishing attacks from QR images alone, without payload decoding, across multiple QR versions and image formats, while remaining small enough for mobile deployment. Three claims are supported by the evidence:
 
 \begin{enumerate}
-\item \textit{Structural features alone are sufficient.} The model never sees URLs, Wi-Fi payloads, or any decoded content, yet achieves AUC 0.8962 on a heterogeneous benchmark.
-\item \textit{Learned representations generalize better than handcrafted ones.} Our handcrafted feature baselines plateau near 0.81; the Siamese approach adds 0.08 AUC with no additional feature engineering.
+\item \textit{Structural features alone are sufficient to surpass prior SOTA.} The model never sees URLs, Wi-Fi payloads, or any decoded content, yet achieves AUC 0.9254 on a heterogeneous benchmark, exceeding Trad et al.'s 0.9133.
+\item \textit{Learned representations generalize better than handcrafted ones.} Our handcrafted feature baselines plateau near 0.81; the Siamese approach adds 0.11 AUC with no additional feature engineering.
 \item \textit{The architecture is interpretable.} Grad-CAM and SHAP together provide pixel-level and feature-level explanations, closing a common gap in prior work.
 \end{enumerate}
 
@@ -329,7 +329,7 @@ Q-Shield demonstrates that deep metric learning can detect quishing attacks from
 
 Q-Shield has three acknowledged limitations.
 
-\textbf{False negative rate.} The model's FNR of 0.20 is suboptimal for a security-critical application. Roughly one in five phishing QR codes in our validation set is misclassified as benign. Focal loss helps but does not fully close this gap. Cost-sensitive training, threshold calibration at deployment time, and ensembling are natural directions for improvement.
+\textbf{False negative rate.} The model's FNR of 0.166 remains above the $\leq 0.10$ threshold typically expected in security-critical applications: roughly one in six phishing QR codes is misclassified as benign. Focal loss reduced FNR substantially compared to BCE baselines, but did not fully close the gap. Cost-sensitive threshold calibration and ensembling are natural directions for further improvement.
 
 \textbf{Unimodal scope.} Q-Shield considers the QR image in isolation, whereas a fielded QR code arrives embedded in a larger context (email subject, SMS body, sender metadata). The architecture leaves room for fusing a textual branch (e.g., a compact language model such as DistilBERT~\cite{sanh2019distilbert}), but validating this requires paired QR+text datasets that are not publicly available at the scale required.
 
