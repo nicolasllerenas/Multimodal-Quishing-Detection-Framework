@@ -281,32 +281,34 @@ Figure~\ref{fig:cm_roc} visualizes the default-threshold decision behavior. The 
 
 Table~\ref{tab:gaps} summarizes the key capabilities Q-Shield inherits from or extends beyond prior work. Four gaps remain unresolved in the literature we reviewed, each of which Q-Shield closes.
 
-\begin{table}[!htbp]
+\begin{table*}[!htbp]
 \caption{Capability Benchmark vs.\ Representative Prior Work}
 \label{tab:gaps}
 \centering
-\renewcommand{\arraystretch}{1.2}
+\small
+\renewcommand{\arraystretch}{1.05}
+\setlength{\tabcolsep}{6pt}
 \begin{tabular}{lccc}
 \toprule
-\textbf{Capability} & \textbf{Trad~\cite{trad2025detecting}} & \textbf{CIC~\cite{nejati2026cic}} & \textbf{Q-Shield} \\
+\textbf{Capability} & \textbf{Trad et al.~\cite{trad2025detecting}} & \textbf{CIC Trap4Phish~\cite{nejati2026cic}} & \textbf{Q-Shield (ours)} \\
 \midrule
-Zero-decoding pipeline           & Yes & No  & \textbf{Yes} \\
-Deep learning backbone           & No  & Yes & \textbf{Yes} \\
-Metric learning (Siamese)        & No  & No  & \textbf{Yes} \\
-Multi-dataset validation         & No  & No  & \textbf{Yes} \\
-Cross-dataset AUC reported       & --  & --  & \textbf{0.93} \\
-Eval samples                     & 2K  & --  & \textbf{22K} \\
-Multiple QR versions in test set & No  & Yes & \textbf{Yes} \\
-Multiple image formats in test set & No & No & \textbf{Yes} \\
-Dual explainability (Grad-CAM + SHAP) & No & No & \textbf{Yes} \\
-Threshold calibration for security & No & No & \textbf{Yes} \\
-Edge-deployable ($<$5M params)    & --  & No  & \textbf{Yes (3.08M)} \\
-Best AUC reported                & 0.913 & $>$0.95$^*$ & \textbf{0.925} \\
+Zero-decoding pipeline                      & Yes       & No        & \textbf{Yes} \\
+Deep learning backbone                      & No        & Yes       & \textbf{Yes} \\
+Metric learning (Siamese)                   & No        & No        & \textbf{Yes} \\
+Multi-dataset validation                    & No        & No        & \textbf{Yes} \\
+Cross-dataset AUC reported                  & --        & --        & \textbf{0.93} \\
+Multiple QR versions in test set            & No        & Yes       & \textbf{Yes} \\
+Multiple image formats in test set          & No        & No        & \textbf{Yes} \\
+Dual explainability (Grad-CAM + SHAP)       & No        & No        & \textbf{Yes} \\
+Threshold calibration for security          & No        & No        & \textbf{Yes} \\
+Edge-deployable ($<5$M params)              & --        & No        & \textbf{Yes ($3.08$M)} \\
+Evaluation samples                          & $2$K      & --        & \textbf{$22$K} \\
+Best AUC reported                           & $0.913$   & $>0.95^{*}$ & \textbf{$0.925$} \\
 \bottomrule
 \end{tabular}
-\vspace{2pt}\\
-{\footnotesize$^*$Reported on URL-derived features, not QR images directly. Not directly comparable.}
-\end{table}
+\\[2pt]
+{\footnotesize $^{*}$ Reported on URL-derived features, not QR images directly; not directly comparable.}
+\end{table*}
 
 Three gaps deserve explicit attention. \textbf{Gap 1: cross-dataset evaluation.} Neither Trad nor CIC report performance when the model is trained on one corpus and tested on the other. Our experiments (Table~\ref{tab:cross}) show that under such a zero-shot transfer protocol, models trained on a single dataset degrade to near-random performance (AUC $0.52$) or to classifier collapse (AUC $0.72$ with $\text{FNR} = 0$). Q-Shield's combined-training design holds $0.925$ AUC across the joint test distribution---a capability that cannot be directly compared to prior work because prior work did not measure it. \textbf{Gap 2: operational FNR guarantees.} Prior work reports a single operating point. We show (Section~\ref{sec:calibration}) that Q-Shield admits a calibrated threshold achieving FNR $\leq 0.10$, the conventional security tolerance. \textbf{Gap 3: interpretability at both pixel and feature levels.} Prior structural approaches provide either feature importance (Trad) or handcrafted interpretability (Wahid et al.) but not both spatial and latent-space explanations. Q-Shield integrates Grad-CAM over the convolutional backbone with SHAP over the learned embedding dimensions, and we validate the spatial attention pattern across both datasets separately to rule out dataset-specific artifacts.
 
