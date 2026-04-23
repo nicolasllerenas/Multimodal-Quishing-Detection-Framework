@@ -52,6 +52,8 @@ quishing, phishing detection, QR codes, Siamese networks, contrastive learning, 
 
 The global adoption of QR codes in payment systems, authentication flows, and public-facing communications has turned an obscure 1990s Japanese invention into a daily security surface. Merchants print QR codes on tables. Governments distribute them in posters. Banks render them inside mobile apps. Attackers noticed. They now distribute QR codes embedded in emails, SMS messages, and physical stickers that, once scanned, redirect users to phishing websites that harvest credentials or install malware. The community has named this attack class \textit{quishing}~\cite{sharevski2022phishing}, and recent empirical studies confirm that it succeeds as frequently as traditional phishing while evading conventional defenses more effectively~\cite{weinz2025impact, geisler2024hooked}.
 
+Quishing is fundamentally a social-engineering attack, not merely a technical one. Classic treatments of the discipline---Mitnick's account of human-factor exploitation~\cite{mitnick2002artdeception} and Hadnagy's systematic framework for social engineering~\cite{hadnagy2018socialengineering}---emphasize that the attacker's goal is to induce an impulsive, low-scrutiny action from the target. QR codes are almost perfectly designed for this purpose: they are opaque to the human eye, require a single gesture to activate, and are presented in contexts (restaurant menus, parking meters, invoice PDFs) that implicitly mark them as legitimate. Users develop a learned trust that is then weaponized. The effect is quantifiable at scale: the 2024 Verizon Data Breach Investigations Report identifies social-engineering-driven phishing as a leading initial access vector across industries~\cite{verizon2024dbir}, and the 2024 IBM Cost of a Data Breach Report places the average cost of phishing-originated breaches at several million dollars per incident~\cite{ibm2024cost}. Any technical defense against quishing must therefore reduce the window in which user impulsiveness can be exploited---ideally by filtering malicious QR codes \textit{before} the user-visible scan decision is even offered.
+
 Quishing succeeds because QR codes occupy a blind spot in conventional phishing defenses. Email and SMS security filters analyze textual content and URL strings; they treat embedded QR images as opaque blobs. The link that a user ultimately follows is never scanned by the security layer. By the time the redirect executes, the damage is already done.
 
 The intuitive countermeasure---scan the QR code, extract the URL, and run existing phishing filters against it---introduces a paradox. Decoding a QR code is the first act of executing its payload. Automated decoding pipelines inherit the very exposure they aim to analyze~\cite{wahsheh2021secure, khalifa2025multiphishnet}. This is particularly dangerous because QR codes can encode data types beyond URLs (Wi-Fi credentials, payment information, scripts), making URL-specific analysis incomplete.
@@ -139,6 +141,15 @@ Wahid et al.\ (2026)~\cite{wahid2026alfa} & Structural + robustness & No & No & 
 \label{sec:methodology}
 %% ============================================================
 
+Figure~\ref{fig:pipeline} presents the full Q-Shield detection pipeline. An input QR image is first preprocessed to a standard 224$\times$224 grayscale tensor (steps 1--2), then passed through a MobileNetV2 backbone whose weights have been pretrained in Phase 1 via Siamese contrastive learning over image pairs (step 3). The backbone produces a 128-dimensional L2-normalized embedding (step 4), which feeds a classification head trained in Phase 2 with focal loss (step 5). At inference, a sigmoid maps the head's logit to a phishing probability (step 6); the Grad-CAM and SHAP branches (step 7) provide per-prediction explanations, and the operating threshold (step 8) is selected from the calibration table in Section~\ref{sec:calibration} according to the target security tolerance. Crucially, the payload of the QR image is never decoded at any step.
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=\textwidth]{figures/fig_pipeline_architecture.png}
+\caption{Q-Shield detection pipeline. Steps 1--6 are active both during training and inference; the contrastive and focal loss blocks (orange) are active only during their respective training phases; the XAI branch (purple) is used only at inference when explanations are requested.}
+\label{fig:pipeline}
+\end{figure*}
+
 \subsection{Problem Formulation}
 
 Let $x \in \mathbb{R}^{H \times W}$ denote a grayscale QR code image. Our goal is to learn a classifier $f_\theta: \mathbb{R}^{H \times W} \to [0, 1]$ that maps $x$ to the probability of being malicious, without decoding $x$ into its underlying payload. The function $f_\theta$ factors into two components:
@@ -188,7 +199,7 @@ We form 80/20 train/validation splits within each dataset and combine them for j
 
 \subsection{Main Results}
 
-Table~\ref{tab:main} summarizes the main experimental results. Q-Shield achieves AUC 0.8962 and F1 0.8205 on the 21{,}998-sample combined validation set. This represents a 10.2 percentage-point improvement over our handcrafted feature baseline (AUC 0.8132) and recovers most of the gap to Trad et al.'s reported 0.9133, despite our evaluation spanning ten times more samples and multiple dataset origins.
+Table~\ref{tab:main} summarizes the main experimental results. Q-Shield achieves AUC $0.925$, recall $0.834$, F1 $0.858$, and FNR $0.166$ on the 21{,}998-sample combined validation set. This represents an $11.2$ percentage-point improvement in AUC over our handcrafted feature baseline ($0.813$) and a $+1.2$ point improvement over Trad et al.'s reported $0.9133$, with the additional observation that our evaluation spans ten times more samples and multiple QR formats whereas Trad's evaluation is restricted to a single QR version rendered uniformly.
 
 \begin{table}[t]
 \caption{Main Results on Combined Validation Set (n=21{,}998)}
@@ -441,6 +452,8 @@ Three concrete extensions are each worthy of dedicated study:
 \item \textbf{Localized deployment.} Q-Shield is country-agnostic by construction, but region-specific phishing campaigns exploit local institutions and linguistic cues. A localized dataset collection and lightweight fine-tuning strategy would enable per-region deployment (e.g., Peruvian financial-services ecosystem, Indian UPI, Brazilian Pix).
 
 \item \textbf{Adversarial robustness.} Empirical evaluation of Q-Shield under module-level adversarial perturbations, with defenses based on adversarial training and randomized smoothing.
+
+\item \textbf{Provenance-aware detection.} The current pipeline classifies a QR code solely from its visual structure. An orthogonal signal, not explored in this work, is the \textit{provenance} of the QR code: the domain or application that produced it, the rendering library used, the presence or absence of a digital signature, and the context in which it was distributed (email header, URL of the hosting page, physical placement). Combining a visual classifier with provenance features could in principle distinguish a benign-looking QR generated by a reputable bank from a visually similar malicious QR produced by an attacker, a distinction that the image alone does not convey. Treating provenance as a first-class signal is a promising direction for the next iteration of the framework.
 \end{enumerate}
 
 \section*{Acknowledgment}
