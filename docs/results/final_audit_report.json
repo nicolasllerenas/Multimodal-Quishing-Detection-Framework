@@ -1,0 +1,83 @@
+{
+  "url_overlap": {
+    "trad_provides_urls": false,
+    "cic_provides_urls": false,
+    "can_directly_verify": false,
+    "indirect_evidence": "Different source corpora + time windows per each paper",
+    "risk_level": "LOW (but unverified)"
+  },
+  "gradcam_per_dataset_correlation": 0.42859214304852666,
+  "inference": {
+    "model_size_mb": 12.02,
+    "params": 3083009,
+    "cpu_latency_ms": 24.88,
+    "gpu_latency_ms": 6.0,
+    "gpu_throughput_imgs_per_sec": 1156.0,
+    "gpu_name": "Tesla T4"
+  },
+  "threshold_calibration": {
+    "default_0.5": {
+      "threshold": 0.5000000000000002,
+      "precision": 0.8603998596953336,
+      "recall": 0.8184851518157542,
+      "fnr": 0.1815148481809092,
+      "fpr": 0.13262245917983131,
+      "f1": 0.8389192836459383
+    },
+    "f1_max": {
+      "threshold": 0.47500000000000014,
+      "precision": 0.8371400198582022,
+      "recall": 0.8438438438410283,
+      "fnr": 0.1561561561556351,
+      "fpr": 0.16394535154893722,
+      "f1": 0.8404785593043652
+    },
+    "fnr_0.10": {
+      "threshold": 0.4000000000000001,
+      "precision": 0.7520868113501612,
+      "recall": 0.9019019018988926,
+      "fnr": 0.09809809809777079,
+      "fpr": 0.29690103298801435,
+      "f1": 0.8202093714609273
+    },
+    "fnr_0.05": {
+      "threshold": 0.3000000000000001,
+      "precision": 0.6066540324266021,
+      "recall": 0.9612946279580872,
+      "fnr": 0.03870537203857623,
+      "fpr": 0.6224591802711681,
+      "f1": 0.7438677979907656
+    },
+    "brier_score": 0.1381052691008396,
+    "ece": 0.1293123598201508
+  },
+  "per_size_analysis": [
+    {
+      "bucket": "Small",
+      "n": 1561,
+      "size_min": 114,
+      "size_max": 198,
+      "AUC": 0.9397,
+      "F1": 0.8853,
+      "FNR": 0.1321
+    },
+    {
+      "bucket": "Medium-Small",
+      "n": 1446,
+      "size_min": 222,
+      "size_max": 222,
+      "AUC": 0.928,
+      "F1": 0.8604,
+      "FNR": 0.2141
+    },
+    {
+      "bucket": "Large",
+      "n": 993,
+      "size_min": 246,
+      "size_max": 582,
+      "AUC": 0.8439,
+      "F1": 0.7387,
+      "FNR": 0.3109
+    }
+  ]
+}

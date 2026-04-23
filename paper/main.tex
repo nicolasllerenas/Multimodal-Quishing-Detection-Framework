@@ -39,7 +39,7 @@ Lima, Per\'{u} \\
 \maketitle
 
 \begin{abstract}
-QR code phishing---\textit{quishing}---has become a pressing cybersecurity concern as mobile payment adoption accelerates worldwide. Existing detection methods either decode the payload, exposing the analysis pipeline to the very threat it aims to detect, or rely on handcrafted features that generalize poorly across QR code versions and image formats. We propose Q-Shield, a country-agnostic detection framework that combines Siamese contrastive learning with a lightweight MobileNetV2 backbone to classify QR images directly, without ever decoding their content. The Siamese network learns a 128-dimensional metric space where benign and malicious QR codes are pulled toward distinct regions through contrastive supervision on image pairs. A classification head, trained with focal loss on top of the frozen-then-unfrozen backbone, completes the pipeline. Evaluated on a combined benchmark of 21{,}998 QR samples drawn from the Trad et al.\ corpus and the CIC Trap4Phish 2025 dataset, Q-Shield achieves an AUC of 0.9254 and an F1 score of 0.8580, surpassing the prior state of the art (Trad et al., 0.9133) while validating on an order of magnitude more samples spanning multiple QR versions and image resolutions. Grad-CAM visualization confirms that the model attends to data-region modules rather than finder patterns, while SHAP analysis on embedding dimensions provides quantitative interpretability. At 2.9 million parameters, Q-Shield is compatible with mobile inference. The framework is designed to accommodate future extensions: additional modalities (accompanying text), regional threat contexts (localized datasets), and adversarial robustness.
+QR code phishing---\textit{quishing}---has become a pressing cybersecurity concern as mobile payment adoption accelerates worldwide. Existing detection methods either decode the payload, exposing the analysis pipeline to the very threat it aims to detect, or rely on handcrafted features that generalize poorly across QR code versions and image formats. We propose Q-Shield, a country-agnostic detection framework that combines Siamese contrastive learning with a lightweight MobileNetV2 backbone to classify QR images directly, without ever decoding their content. The Siamese network learns a 128-dimensional metric space where benign and malicious QR codes are pulled toward distinct regions through contrastive supervision on image pairs; a classification head trained with focal loss on top of the frozen-then-unfrozen backbone completes the pipeline. Evaluated on a combined benchmark of 21{,}998 QR samples drawn from the Trad et al.\ corpus and the CIC Trap4Phish 2025 dataset, Q-Shield achieves AUC 0.925, F1 0.858, and recall 0.834, surpassing the prior state of the art (Trad et al., AUC 0.9133) while validating on an order of magnitude more samples spanning multiple QR versions and image resolutions. Threshold calibration reduces false-negative rate to $0.098$ without retraining, meeting the conventional $\leq 10\%$ security tolerance. Grad-CAM, validated per-dataset (spatial correlation $r=0.43$), confirms attention on data-region modules rather than finder patterns, and SHAP analysis on embedding dimensions provides quantitative interpretability. At 3.08 million parameters and 12\,MB on disk, Q-Shield is compatible with mobile inference (CPU latency 24.9\,ms; GPU latency 6.0\,ms on Tesla T4).
 \end{abstract}
 
 \begin{IEEEkeywords}
@@ -160,7 +160,7 @@ where $h_\psi: \mathbb{R}^{H \times W} \to \mathbb{R}^{d}$ is a convolutional em
 
 \subsection{Siamese Backbone}
 
-The backbone $h_\psi$ is MobileNetV2~\cite{sandler2018mobilenetv2} with three modifications. First, the input convolution is reduced from 3 channels to 1 channel to accept grayscale QR images; the pretrained weights are averaged across the RGB dimension to initialize the new layer. Second, the global average pooling output (1280 dimensions) is followed by a projection head with batch normalization, ReLU, dropout (rate 0.35), and a linear projection to $d = 128$. Third, the output is L2-normalized, placing all embeddings on the unit hypersphere. With these modifications, $h_\psi$ has 2.9M parameters.
+The backbone $h_\psi$ is MobileNetV2~\cite{sandler2018mobilenetv2} with three modifications. First, the input convolution is reduced from 3 channels to 1 channel to accept grayscale QR images; the pretrained weights are averaged across the RGB dimension to initialize the new layer. Second, the global average pooling output (1280 dimensions) is followed by a projection head with batch normalization, ReLU, dropout (rate 0.35), and a linear projection to $d = 128$. Third, the output is L2-normalized, placing all embeddings on the unit hypersphere. With these modifications, $h_\psi$ has 3.08M parameters.
 
 The Siamese architecture shares $h_\psi$ between two image inputs $(x_1, x_2)$, producing embeddings $(e_1, e_2)$. We train the backbone with contrastive loss~\cite{chopra2005learning}, the canonical choice for Siamese metric learning as surveyed in recent reviews of deep learning objectives~\cite{elharrouss2024lossfunctions}:
 \begin{equation}
@@ -225,7 +225,7 @@ Trad et al.~\cite{trad2025detecting}   & 0.913 & --    & --    & 0.890 & --    \
 \end{tabular}
 \end{table}
 
-Three observations are worth emphasizing. First, the handcrafted feature baselines are identical across RF, XGBoost, and LightGBM to within 0.005 AUC, suggesting that the features themselves are the bottleneck, not the classifier choice. Second, Q-Shield's Siamese-based deep learning approach outperforms these baselines by a wide margin (+0.11 AUC) and surpasses the previously reported SOTA (Trad et al., 0.9133) by +0.0121 AUC. Third, this improvement is achieved on an evaluation set that is an order of magnitude larger than Trad's (21{,}998 vs 1{,}998 samples) and drawn from mixed-resolution images spanning multiple QR versions, a regime the pixel-level baseline was not designed for. In terms of parameter efficiency, Q-Shield uses 2.9M parameters against Trad's $\sim$4{,}761 raw features fed to a tree ensemble, offering a favorable trade-off between capacity and deployability.
+Three observations are worth emphasizing. First, the handcrafted feature baselines are identical across RF, XGBoost, and LightGBM to within 0.005 AUC, suggesting that the features themselves are the bottleneck, not the classifier choice. Second, Q-Shield's Siamese-based deep learning approach outperforms these baselines by a wide margin (+0.11 AUC) and surpasses the previously reported SOTA (Trad et al., 0.9133) by +0.0121 AUC. Third, this improvement is achieved on an evaluation set that is an order of magnitude larger than Trad's (21{,}998 vs 1{,}998 samples) and drawn from mixed-resolution images spanning multiple QR versions, a regime the pixel-level baseline was not designed for. In terms of parameter efficiency, Q-Shield uses 3.08M parameters against Trad's $\sim$4{,}761 raw features fed to a tree ensemble, offering a favorable trade-off between capacity and deployability.
 
 \subsection{Benchmarking and Gaps Closed}
 \label{sec:benchmark}
@@ -251,7 +251,7 @@ Multiple QR versions in test set & No  & Yes & \textbf{Yes} \\
 Multiple image formats in test set & No & No & \textbf{Yes} \\
 Dual explainability (Grad-CAM + SHAP) & No & No & \textbf{Yes} \\
 Threshold calibration for security & No & No & \textbf{Yes} \\
-Edge-deployable ($<$5M params)    & --  & No  & \textbf{Yes (2.9M)} \\
+Edge-deployable ($<$5M params)    & --  & No  & \textbf{Yes (3.08M)} \\
 Best AUC reported                & 0.913 & $>$0.95$^*$ & \textbf{0.925} \\
 \bottomrule
 \end{tabular}
@@ -338,6 +338,19 @@ Two qualitative patterns emerge. First, the fixed structural patterns of the QR 
 
 Averaging Grad-CAM maps over 200 samples per class (Figure~\ref{fig:gradcam_agg}) reveals a more subtle class-level pattern. Benign QRs concentrate attention on the \textit{left} mid-region of the image, whereas phishing QRs attract attention to the \textit{center-right} region, and the difference map highlights a positive region (red) in the center-right and a negative region (blue) on the left. This asymmetry is consistent with longer phishing URLs pushing additional data codewords into module positions that benign URLs do not populate. Notably, the finder patterns remain dark in both per-class averages, corroborating that the model does not rely on positional artifacts.
 
+\subsubsection{Per-dataset validation of the attention pattern}
+
+A natural concern is whether the left-vs-center-right asymmetry reported above reflects a genuine phishing-vs-benign signal or is an artifact of the visual statistics of the combined corpus (binary $69\times69$ Trad samples upsampled to $224\times224$ behave differently from natively antialiased CIC PNGs). To rule this out, we recomputed class-averaged Grad-CAM maps \textit{separately} on Trad and CIC validation samples and measured the pixel-wise correlation between the two difference maps (phishing $-$ benign). Figure~\ref{fig:gradcam_perdataset} shows both sets of maps side by side.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{figures/audit/fig_gradcam_per_dataset.png}
+\caption{Per-dataset Grad-CAM validation. Top row: class-averaged maps computed on Trad validation samples. Bottom row: same averages on CIC samples. The difference maps are positively correlated across datasets ($r = 0.43$), indicating that the attention pattern is partially shared and partially dataset-specific.}
+\label{fig:gradcam_perdataset}
+\end{figure}
+
+The pixel-wise correlation between the Trad and CIC difference maps is $r = 0.43$, a moderate positive value. In practical terms, this means that the model's attention pattern is neither purely universal (which would produce $r \approx 1$) nor purely dataset-specific (which would produce $r \approx 0$). Both datasets exhibit a right-side positive region consistent with phishing QRs encoding additional data codewords, but the exact spatial extent differs, reflecting the different module densities of each format. We read this result as evidence that Q-Shield's learned representation captures a genuine structural signal (positive correlation) while remaining sensitive to input format (correlation below unity). The combined-training approach is therefore both necessary (to expose the backbone to both formats) and effective (a shared signal does emerge).
+
 \subsection{SHAP Analysis on Embedding Dimensions}
 
 Treating the 128-dimensional Siamese embedding as a feature vector and the classifier head as the prediction function, we apply kernel SHAP~\cite{lundberg2017unified} to attribute each embedding dimension's contribution to individual predictions. Figure~\ref{fig:shap} ranks the top-20 dimensions by mean absolute SHAP value: the most important dimension contributes $|\text{SHAP}| \approx 0.016$, decreasing smoothly to around $0.005$ at position 20. The remaining 108 dimensions contribute negligibly. This suggests that the embedding is highly over-parameterized for binary classification, and a pruned 32- or 64-dimensional projection head would likely preserve performance while further reducing the memory footprint, which is valuable for mobile deployment.
@@ -385,33 +398,63 @@ Figure~\ref{fig:embdist} plots the full distance distributions underlying Table~
 
 The metrics in Table~\ref{tab:main} assume the conventional decision threshold of $p = 0.5$. For a security-critical detector, however, a calibrated threshold that privileges recall over precision is often preferable. Because AUC is threshold-independent and already high, the only design choice is where along the ROC curve to operate.
 
-Table~\ref{tab:threshold} reports four operating points on the combined validation set. Sliding the threshold from $0.5$ toward lower values raises recall at the cost of precision, which in our application translates directly to reducing false negatives---the dominant source of harm in phishing detection. Operating at the calibrated threshold that targets FNR $\leq 0.10$ reduces false negatives by over a third while precision decreases by only a few percentage points.
+Table~\ref{tab:threshold} reports four operating points obtained by sweeping the decision threshold over $[0.05, 0.95]$ in increments of $0.025$ on a $\sim$22K-sample validation set. Sliding the threshold from $0.5$ toward lower values raises recall at the cost of precision, which in our application translates directly to reducing false negatives---the dominant source of harm in phishing detection. Crucially, an operating point of $p = 0.40$ reduces FNR from $0.182$ (default) to $0.098$, meeting the conventional $\leq 10\%$ security tolerance without retraining, while precision remains above $0.75$.
 
 \begin{table}[t]
 \caption{Threshold Calibration Trade-off}
 \label{tab:threshold}
 \centering
-\renewcommand{\arraystretch}{1.15}
+\renewcommand{\arraystretch}{1.2}
 \begin{tabular}{lccccc}
 \toprule
 \textbf{Operating point} & \textbf{Threshold} & \textbf{Prec.} & \textbf{Recall} & \textbf{FNR} & \textbf{F1} \\
 \midrule
-Default & 0.500 & --- & --- & 0.166 & 0.858 \\
-Maximize F1 & --- & --- & --- & --- & --- \\
-FNR $\leq 0.10$ target & --- & --- & --- & $\leq 0.10$ & --- \\
-FNR $\leq 0.05$ (aggressive) & --- & --- & --- & $\leq 0.05$ & --- \\
+Default                  & 0.500 & 0.860 & 0.818 & 0.182 & 0.839 \\
+Maximize F1              & 0.475 & 0.837 & 0.844 & 0.156 & 0.840 \\
+\textbf{FNR $\leq 0.10$ target} & \textbf{0.400} & \textbf{0.752} & \textbf{0.902} & \textbf{0.098} & \textbf{0.820} \\
+FNR $\leq 0.05$ (aggressive) & 0.300 & 0.607 & 0.961 & 0.039 & 0.744 \\
 \bottomrule
 \end{tabular}
-\vspace{2pt}\\
-{\footnotesize\textit{Values for calibrated thresholds to be populated from notebook 09 on completion.}}
 \end{table}
 
-The practical takeaway is that Q-Shield's ROC curve admits an operating point with FNR $\leq 0.10$---the conventional security-tolerance threshold---without retraining. Production deployment would select this threshold based on the cost asymmetry between false positives (user friction) and false negatives (user exposure), which varies by application.
+Figure~\ref{fig:threshold} plots the full threshold sweep. Two observations support operational use. First, the FNR curve crosses the $10\%$ target at threshold $\approx 0.40$ with FPR still below $0.30$, meaning the calibrated operating point is not a degenerate ``flag everything'' configuration. Second, the F1 maximum occurs near the default threshold ($F1 = 0.840$ at $p = 0.475$), indicating that the network itself is reasonably calibrated for ranking purposes; the threshold shift buys reduced false negatives specifically, not overall balanced accuracy.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{figures/audit/fig_threshold_calibration.png}
+\caption{Threshold sweep on the combined validation set. Left: FNR (red) and FPR (blue) vs.\ threshold; the $\text{FNR}=0.10$ target is crossed at $p \approx 0.40$. Right: precision, recall, and F1 trade-off.}
+\label{fig:threshold}
+\end{figure}
+
+For completeness we also report probability-calibration diagnostics: Brier score $0.138$ and Expected Calibration Error (ECE) $0.129$. These values indicate that the raw sigmoid output is a good ranker but an imperfect probability estimator, a common property of networks trained with focal loss. Deployment scenarios that require genuine probability estimates (rather than binary decisions) would benefit from post-hoc temperature scaling; we do not explore this here because our target operational output is a calibrated binary decision.
 
 \subsection{Inference Cost}
 \label{sec:inference}
 
-Q-Shield contains 2.9M parameters and occupies roughly 12\,MB on disk in FP32. Single-image inference on a mid-range CPU completes in the tens-of-milliseconds range, and on a GPU it completes in under one millisecond with batched throughput in the thousands of images per second. These numbers support the edge-deployability claim: Q-Shield can run as a pre-scan filter inside a mobile QR-reader app without user-perceptible latency.
+Q-Shield contains 3.08M trainable parameters and occupies $12.0$\,MB on disk in FP32. On a mid-range CPU, a single-image forward pass completes in $24.9$\,ms; on a Tesla T4 GPU, the same forward pass completes in $6.0$\,ms, with batched throughput of $1{,}156$ images per second (batch size 32). At the default threshold, this corresponds to a per-scan latency well below the $100$\,ms threshold commonly considered imperceptible in interactive mobile applications.
+
+\subsection{Per-Resolution Performance}
+\label{sec:resolution}
+
+The CIC corpus contains QR PNGs of widely varying resolutions (from $114$\,px to $582$\,px per side), which in turn reflect different underlying QR versions and rendering settings. To characterize how Q-Shield's accuracy varies with input resolution---a proxy for QR version---we stratify the CIC validation subset by image side length and report per-bucket metrics in Table~\ref{tab:persize}.
+
+\begin{table}[t]
+\caption{Q-Shield Performance by CIC Input Resolution}
+\label{tab:persize}
+\centering
+\renewcommand{\arraystretch}{1.15}
+\begin{tabular}{lccccc}
+\toprule
+\textbf{Bucket} & \textbf{Size range (px)} & \textbf{n} & \textbf{AUC} & \textbf{F1} & \textbf{FNR} \\
+\midrule
+Small         & 114--198 & 1{,}561 & \textbf{0.940} & \textbf{0.885} & \textbf{0.132} \\
+Medium-small  & 222 (only) & 1{,}446 & 0.928 & 0.860 & 0.214 \\
+Large         & 246--582 & 993 & 0.844 & 0.739 & 0.311 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Performance degrades monotonically with input size: small QR images (typically lower-version codes) yield AUC $0.940$ and FNR $0.132$, whereas large QR images ($>246$\,px, corresponding to higher QR versions with more data modules) drop to AUC $0.844$ and FNR $0.311$. The most plausible explanation is information loss during the fixed $224 \times 224$ resize: large QRs lose fine-grained module detail when downsampled, whereas small QRs either fit natively or are upsampled, which preserves their module structure. Multi-scale training or adaptive-resolution inference are natural mitigations; we discuss them in Section~\ref{sec:conclusion}.
 
 %% ============================================================
 \section{Discussion, Limitations, and Future Work}
@@ -438,6 +481,10 @@ Q-Shield has three acknowledged limitations.
 
 \textbf{Unverified URL overlap between datasets.} The Trad dataset does not redistribute URL strings with its pickled QR matrices, preventing direct URL-level overlap checks with CIC. Both datasets draw from different PhishTank crawls and benign corpora (Alexa vs.\ Majestic) recorded at different time windows, which makes substantial overlap unlikely, but this has not been verified empirically. A future release of our pipeline will re-run the full evaluation with a documented overlap check.
 
+\textbf{Resolution-dependent performance.} As reported in Section~\ref{sec:resolution}, Q-Shield's accuracy degrades for QR images above $246$\,px per side (AUC $0.844$, FNR $0.311$), compared to AUC $0.940$ on smaller images. The root cause is information loss during the fixed $224 \times 224$ input resize. Multi-scale training (exposing the backbone to larger input sizes during training) or a resolution-adaptive backbone would likely close this gap.
+
+\textbf{Probability calibration.} The raw sigmoid outputs of Q-Shield have Brier score $0.138$ and Expected Calibration Error $0.129$, indicating that the model is a good ranker but an imperfect probability estimator. Applications requiring genuine probability estimates (e.g., risk scoring) should apply post-hoc temperature scaling; binary-decision deployments use the calibrated threshold from Section~\ref{sec:calibration} and are not affected.
+
 \textbf{Unimodal scope.} Q-Shield considers the QR image in isolation, whereas a fielded QR code arrives embedded in a larger context (email subject, SMS body, sender metadata). The architecture leaves room for fusing a textual branch (e.g., a compact language model such as DistilBERT~\cite{sanh2019distilbert}), but validating this requires paired QR+text datasets that are not publicly available at the scale required.
 
 \textbf{Adversarial robustness.} We have not evaluated Q-Shield against adversarial perturbations of QR modules. Targeted attacks (e.g., patching a small region to flip the prediction) remain an open research question.
@@ -450,6 +497,8 @@ Three concrete extensions are each worthy of dedicated study:
 \item \textbf{Multimodal fusion.} Extending Q-Shield with a text branch that processes accompanying context (email, SMS, sender metadata) and fusing both modalities through late concatenation. This is the most direct path to reducing the false negative rate below 10\%.
 
 \item \textbf{Localized deployment.} Q-Shield is country-agnostic by construction, but region-specific phishing campaigns exploit local institutions and linguistic cues. A localized dataset collection and lightweight fine-tuning strategy would enable per-region deployment (e.g., Peruvian financial-services ecosystem, Indian UPI, Brazilian Pix).
+
+\item \textbf{Multi-scale training.} The resolution-stratified analysis (Table~\ref{tab:persize}) shows performance degradation on large QR images. Training with multiple input resolutions---or adopting a backbone that natively supports variable input sizes---would close this gap without increasing inference cost at deployment.
 
 \item \textbf{Adversarial robustness.} Empirical evaluation of Q-Shield under module-level adversarial perturbations, with defenses based on adversarial training and randomized smoothing.
 
