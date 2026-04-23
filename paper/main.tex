@@ -316,35 +316,35 @@ Three gaps deserve explicit attention. \textbf{Gap 1: cross-dataset evaluation.}
 
 Table~\ref{tab:ablation} reports an ablation over five variants of the full pipeline. Each variant isolates a single design decision.
 
-\begin{table}[!htbp]
-\caption{Ablation Study (combined validation set, n=21{,}998)}
-\label{tab:ablation}
+\begin{table*}[!htbp]
 \centering
-\renewcommand{\arraystretch}{1.15}
+\begin{minipage}{0.48\textwidth}
+\centering
+\caption{Ablation Study (combined validation set, n=$21{,}998$)}
+\label{tab:ablation}
+\small
+\renewcommand{\arraystretch}{1.1}
+\setlength{\tabcolsep}{5pt}
 \begin{tabular}{lcccc}
 \toprule
 \textbf{Variant} & \textbf{AUC} & \textbf{Recall} & \textbf{F1} & \textbf{FNR} \\
 \midrule
 \textbf{A1: Full Q-Shield (ours)} & \textbf{0.9254} & \textbf{0.8338} & \textbf{0.8576} & \textbf{0.1662} \\
-A2: No Siamese pretraining       & 0.8764 & 0.7330 & 0.7851 & 0.2670 \\
-A3: BCE loss (no focal)          & 0.8771 & 0.7295 & 0.7857 & 0.2705 \\
-A4: No frozen start              & 0.8810 & 0.7702 & 0.8006 & 0.2298 \\
-A5: Small head (256$\to$64$\to$1) & 0.8752 & 0.7710 & 0.7943 & 0.2290 \\
+A2: No Siamese pretraining        & 0.8764 & 0.7330 & 0.7851 & 0.2670 \\
+A3: BCE loss (no focal)           & 0.8771 & 0.7295 & 0.7857 & 0.2705 \\
+A4: No frozen start               & 0.8810 & 0.7702 & 0.8006 & 0.2298 \\
+A5: Small head ($256\to64\to1$)    & 0.8752 & 0.7710 & 0.7943 & 0.2290 \\
 \bottomrule
 \end{tabular}
-\end{table}
-
-Several patterns emerge from Table~\ref{tab:ablation}. First, the Siamese pretraining phase (A2) is the largest single contributor: removing it drops AUC by $0.049$ and raises FNR by $10$ percentage points. Fine-tuning an ImageNet-pretrained MobileNetV2 directly on the binary classification objective, without the prior contrastive stage, fails to extract the same quality of representations that the paired-comparison objective produces. Second, replacing focal loss with standard binary cross-entropy (A3) degrades AUC only marginally ($-0.048$) but increases FNR dramatically ($+0.10$), confirming that focal loss primarily acts on the cost of false negatives rather than overall ranking. This matters in a security setting where missed phishing detections carry asymmetric cost. Third, removing the frozen-start schedule (A4) and shrinking the classifier head (A5) each cost roughly $0.045$ AUC, indicating that both decisions matter but neither is dominant. The four design choices together account for a roughly $0.05$ AUC improvement, the majority of the gap between our model and the no-pretraining baseline.
-
-\subsection{Cross-Dataset Generalization}
-
-To assess whether Q-Shield learns patterns that transfer across dataset origins or merely memorizes per-dataset artifacts, we conduct three cross-dataset experiments (Table~\ref{tab:cross}).
-
-\begin{table}[!htbp]
+\end{minipage}%
+\hfill
+\begin{minipage}{0.48\textwidth}
+\centering
 \caption{Cross-Dataset Generalization}
 \label{tab:cross}
-\centering
-\renewcommand{\arraystretch}{1.15}
+\small
+\renewcommand{\arraystretch}{1.1}
+\setlength{\tabcolsep}{5pt}
 \begin{tabular}{lcccc}
 \toprule
 \textbf{Setup} & \textbf{AUC} & \textbf{Recall} & \textbf{F1} & \textbf{FNR} \\
@@ -354,7 +354,14 @@ CV2: Train Trad $\to$ Test CIC & 0.5181 & 0.5083 & 0.5166 & 0.4917 \\
 \textbf{CV3: Combined (ours)}  & \textbf{0.9254} & \textbf{0.8338} & \textbf{0.8576} & \textbf{0.1662} \\
 \bottomrule
 \end{tabular}
-\end{table}
+\end{minipage}
+\end{table*}
+
+Several patterns emerge from Table~\ref{tab:ablation}. First, the Siamese pretraining phase (A2) is the largest single contributor: removing it drops AUC by $0.049$ and raises FNR by $10$ percentage points. Fine-tuning an ImageNet-pretrained MobileNetV2 directly on the binary classification objective, without the prior contrastive stage, fails to extract the same quality of representations that the paired-comparison objective produces. Second, replacing focal loss with standard binary cross-entropy (A3) degrades AUC only marginally ($-0.048$) but increases FNR dramatically ($+0.10$), confirming that focal loss primarily acts on the cost of false negatives rather than overall ranking. This matters in a security setting where missed phishing detections carry asymmetric cost. Third, removing the frozen-start schedule (A4) and shrinking the classifier head (A5) each cost roughly $0.045$ AUC, indicating that both decisions matter but neither is dominant. The four design choices together account for a roughly $0.05$ AUC improvement, the majority of the gap between our model and the no-pretraining baseline.
+
+\subsection{Cross-Dataset Generalization}
+
+To assess whether Q-Shield learns patterns that transfer across dataset origins or merely memorizes per-dataset artifacts, we conduct three cross-dataset experiments (Table~\ref{tab:cross}, presented side-by-side with the ablation in the table block above).
 
 We emphasize that these cross-dataset experiments are not a conventional generalization test; rather, they characterize the \textit{domain shift} between the two corpora. CIC images are variable-resolution grayscale PNGs subject to anti-aliasing and rendering artifacts, whereas Trad samples are clean $69 \times 69$ binary matrices. The two distributions differ at the pixel level in ways that exceed what mild augmentation can bridge.
 
@@ -404,45 +411,49 @@ The pixel-wise correlation between the Trad and CIC difference maps is $r = 0.43
 
 \subsection{SHAP Analysis on Embedding Dimensions}
 
-Treating the 128-dimensional Siamese embedding as a feature vector and the classifier head as the prediction function, we apply kernel SHAP~\cite{lundberg2017unified} to attribute each embedding dimension's contribution to individual predictions. Figure~\ref{fig:shap} ranks the top-20 dimensions by mean absolute SHAP value: the most important dimension contributes $|\text{SHAP}| \approx 0.016$, decreasing smoothly to around $0.005$ at position 20. The remaining 108 dimensions contribute negligibly. This suggests that the embedding is highly over-parameterized for binary classification, and a pruned 32- or 64-dimensional projection head would likely preserve performance while further reducing the memory footprint, which is valuable for mobile deployment.
-
-\begin{figure}[!htbp]
-\centering
-\includegraphics[width=\columnwidth]{figures/xai/fig8_shap_embedding.png}
-\caption{Top-20 embedding dimensions ranked by mean absolute SHAP value. A long tail of dimensions contributes little, suggesting the 128-d embedding could be pruned.}
-\label{fig:shap}
-\end{figure}
+Treating the 128-dimensional Siamese embedding as a feature vector and the classifier head as the prediction function, we apply kernel SHAP~\cite{lundberg2017unified} to attribute each embedding dimension's contribution to individual predictions. Figure~\ref{fig:shap_dist} (left) ranks the top-20 dimensions by mean absolute SHAP value: the most important dimension contributes $|\text{SHAP}| \approx 0.016$, decreasing smoothly to around $0.005$ at position 20. The remaining 108 dimensions contribute negligibly. This suggests that the embedding is highly over-parameterized for binary classification, and a pruned 32- or 64-dimensional projection head would likely preserve performance while further reducing the memory footprint, which is valuable for mobile deployment.
 
 \subsection{Embedding Space Separation}
 
-We quantify the geometric separation induced by contrastive learning by comparing intra-class and inter-class Euclidean distances in the 128-dimensional embedding space, computed on the validation set (Table~\ref{tab:distances}). The mean benign-to-phishing distance is $0.928$, roughly twice as large as the mean within-class distances ($0.501$ for benign pairs and $0.458$ for phishing pairs), yielding an inter- to intra-class separation ratio of approximately $1.94$.
+We quantify the geometric separation induced by contrastive learning by comparing intra-class and inter-class Euclidean distances in the 128-dimensional embedding space, computed on the validation set. The mean benign-to-phishing distance is $0.928$, roughly twice as large as the mean within-class distances ($0.501$ for benign pairs, $0.458$ for phishing pairs), yielding an inter-to-intra-class separation ratio of approximately $1.94$ (Table~\ref{tab:distances}). Figure~\ref{fig:shap_dist} (right) plots the full distributions.
+
+\begin{figure*}[!htbp]
+\centering
+\begin{minipage}{0.48\textwidth}
+\centering
+\includegraphics[width=\textwidth]{figures/xai/fig8_shap_embedding.png}
+\\[-2pt](a) SHAP importance ranking (top-20 of 128 dimensions).
+\end{minipage}%
+\hfill
+\begin{minipage}{0.48\textwidth}
+\centering
+\includegraphics[width=\textwidth]{figures/xai/fig7_embedding_distances.png}
+\\[-2pt](b) Pairwise Euclidean distance distributions in embedding space.
+\end{minipage}
+\caption{Latent-space interpretability. (a) Top-20 embedding dimensions ranked by mean $|\text{SHAP}|$; the long tail of dimensions contributes negligibly, suggesting the 128-d embedding could be pruned. (b) Distance distributions: intra-class distances (green, red) concentrate near zero; inter-class distances (blue) skew right, with the rightmost mass around $1.3$--$1.5$ corresponding to pairs pushed to the contrastive margin.}
+\label{fig:shap_dist}
+\end{figure*}
 
 \begin{table}[!htbp]
 \caption{Embedding Distance Statistics (Validation Set)}
 \label{tab:distances}
 \centering
-\renewcommand{\arraystretch}{1.15}
+\small
+\renewcommand{\arraystretch}{1.1}
 \begin{tabular}{lc}
 \toprule
 \textbf{Pair type} & \textbf{Mean Euclidean distance} \\
 \midrule
-Benign--Benign & 0.501 \\
-Phishing--Phishing & 0.458 \\
-Benign--Phishing & \textbf{0.928} \\
+Benign--Benign & $0.501$ \\
+Phishing--Phishing & $0.458$ \\
+Benign--Phishing & $\mathbf{0.928}$ \\
 \midrule
-Separation ratio (inter/intra) & \textbf{1.94} \\
+Separation ratio (inter/intra) & $\mathbf{1.94}$ \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-\begin{figure}[!htbp]
-\centering
-\includegraphics[width=\columnwidth]{figures/xai/fig7_embedding_distances.png}
-\caption{Distribution of pairwise Euclidean distances in the 128-d embedding space. Intra-class distances (green, red) concentrate near zero; inter-class distances (blue) skew right. The rightmost mass around $1.3$--$1.5$ contains pairs the Siamese objective pushed near the full margin.}
-\label{fig:embdist}
-\end{figure}
-
-Figure~\ref{fig:embdist} plots the full distance distributions underlying Table~\ref{tab:distances}. Two observations deserve attention. First, the separation ratio greater than 1 confirms that contrastive training pulls same-class samples together and pushes different-class samples apart, as intended. Second, the phishing-phishing mean distance is \textit{smaller} than the benign-benign one, meaning that phishing QR codes are more tightly clustered in embedding space than benign ones. A plausible interpretation is that phishing URLs share structural regularities (common URL shorteners, redirect chains, query parameter patterns) that induce similar module distributions across different samples, whereas benign URLs span a more diverse distribution.
+Two observations deserve attention (panel (b) of Figure~\ref{fig:shap_dist}). First, the separation ratio greater than 1 confirms that contrastive training pulls same-class samples together and pushes different-class samples apart, as intended. Second, the phishing-phishing mean distance is \textit{smaller} than the benign-benign one, meaning that phishing QR codes are more tightly clustered in embedding space than benign ones. A plausible interpretation is that phishing URLs share structural regularities (common URL shorteners, redirect chains, query parameter patterns) that induce similar module distributions across different samples, whereas benign URLs span a more diverse distribution.
 
 \subsection{Threshold Calibration for Security Deployment}
 \label{sec:calibration}
