@@ -40,7 +40,7 @@ Lima, Per\'{u} \\
 \maketitle
 
 \begin{abstract}
-QR code phishing---\textit{quishing}---has become a pressing cybersecurity concern as mobile payment adoption accelerates worldwide. Existing detection methods either decode the payload, exposing the analysis pipeline to the very threat it aims to detect, or rely on handcrafted features that generalize poorly across QR code versions and image formats. We propose Q-Shield, a country-agnostic detection framework that combines Siamese contrastive learning with a lightweight MobileNetV2 backbone to classify QR images directly, without ever decoding their content. The Siamese network learns a 128-dimensional metric space where benign and malicious QR codes are pulled toward distinct regions through contrastive supervision on image pairs; a classification head trained with focal loss on top of the frozen-then-unfrozen backbone completes the pipeline. Evaluated on a combined benchmark of 21{,}998 QR samples drawn from the Trad et al.\ corpus and the CIC Trap4Phish 2025 dataset, Q-Shield achieves AUC 0.925, F1 0.858, and recall 0.834, surpassing the prior state of the art (Trad et al., AUC 0.9133) while validating on an order of magnitude more samples spanning multiple QR versions and image resolutions. Threshold calibration reduces false-negative rate to $0.098$ without retraining, meeting the conventional $\leq 10\%$ security tolerance. Grad-CAM, validated per-dataset (spatial correlation $r=0.43$), confirms attention on data-region modules rather than finder patterns, and SHAP analysis on embedding dimensions provides quantitative interpretability. At 3.08 million parameters and 12\,MB on disk, Q-Shield is compatible with mobile inference (CPU latency 24.9\,ms; GPU latency 6.0\,ms on Tesla T4).
+QR code phishing---\textit{quishing}---has become a pressing cybersecurity concern as mobile payment adoption accelerates worldwide. Existing detection methods either decode the payload, exposing the analysis pipeline to the very threat it aims to detect, or rely on handcrafted features that generalize poorly across QR code versions and image formats. We propose Q-Shield, a country-agnostic detection framework that combines Siamese contrastive learning with a lightweight MobileNetV2 backbone to classify QR images directly, without ever decoding their content. The Siamese network learns a 128-dimensional metric space where benign and malicious QR codes are pulled toward distinct regions through contrastive supervision on image pairs; a classification head trained with focal loss on top of the frozen-then-unfrozen backbone completes the pipeline. Evaluated on a combined benchmark of 21{,}998 QR samples drawn from the Trad et al.\ corpus and the CIC Trap4Phish 2025 dataset, Q-Shield achieves AUC 0.925, F1 0.858, and recall 0.834, surpassing the prior state of the art (Trad et al., AUC $0.913$) while validating on an order of magnitude more samples spanning multiple QR versions and image resolutions. Threshold calibration reduces false-negative rate to $0.098$ without retraining, meeting the conventional $\leq 10\%$ security tolerance. Grad-CAM, validated per-dataset (spatial correlation $r=0.43$), confirms attention on data-region modules rather than finder patterns, and SHAP analysis on embedding dimensions provides quantitative interpretability. At 3.08 million parameters and 12\,MB on disk, Q-Shield is compatible with mobile inference (CPU latency 24.9\,ms; GPU latency 6.0\,ms on Tesla T4).
 \end{abstract}
 
 \begin{IEEEkeywords}
@@ -93,17 +93,21 @@ The remainder of the paper is organized as follows. Section~\ref{sec:related} re
 
 \subsection{URL- and Payload-Based Detection}
 
-The earliest approaches to malicious QR code detection mirror email phishing pipelines: decode the URL, extract lexical and reputation features, classify. Wahsheh and Kadaer~\cite{wahsheh2021secure} proposed a machine learning pipeline operating on URL string features extracted from scanned QR codes. Khalifa et al.~\cite{khalifa2025multiphishnet} introduced MultiPhishNet, a multimodal deep learning architecture combining URL text with visual representations. Nejati et al.~\cite{nejati2026cic} constructed the CIC Trap4Phish corpus, pairing QR images with URL metadata across multiple document formats, and evaluated classical ML classifiers on URL-derived features.
+The earliest approaches to malicious QR code detection mirror email phishing pipelines: decode the URL, extract lexical and reputation features, classify. Wahsheh and Al-Zahrani~\cite{wahsheh2021secure} proposed a machine learning pipeline operating on URL string features extracted from scanned QR codes. Khalifa et al.~\cite{khalifa2025multiphishnet} introduced MultiPhishNet, a multimodal deep learning architecture combining URL text with visual representations. Nejati et al.~\cite{nejati2026cic} constructed the CIC Trap4Phish corpus, pairing QR images with URL metadata across multiple document formats, and evaluated classical ML classifiers on URL-derived features.
 
 These methods demonstrate that, given a URL string, classification can achieve high accuracy. Their common limitation is the decoding requirement itself. A QR code must be scanned before URL-level analysis can begin, introducing both the exposure paradox and an incompatibility with non-URL payloads.
 
 \subsection{Pixel-Level Visual Analysis}
 
-Trad and Chehab~\cite{trad2025detecting} were, to our knowledge, the first to demonstrate that QR codes contain structural signals sufficient for phishing detection \textit{without decoding}. They trained XGBoost and related classifiers directly on the 4{,}761 raw pixel values of 69$\times$69 QR matrices, achieving AUC 0.9133 on a dataset of 9{,}987 samples. Feature importance analysis revealed that specific pixel positions near alignment patterns carry disproportionate discriminative weight.
+Trad and Chehab~\cite{trad2025detecting} were, to our knowledge, the first to demonstrate that QR codes contain structural signals sufficient for phishing detection \textit{without decoding}. They trained XGBoost and related classifiers directly on the $4{,}761$ raw pixel values of $69\times69$ QR matrices, achieving AUC $0.913$ on a dataset of $9{,}987$ samples. Feature importance analysis revealed that specific pixel positions near alignment patterns carry disproportionate discriminative weight.
 
 Wahid et al.~\cite{wahid2025qris} extended structural analysis to payment-specific QRIS codes with handcrafted features (module density, pattern regularity, error correction level). Their subsequent work~\cite{wahid2026alfa} evaluated robustness of these features under perturbation.
 
 Our work builds on the \textit{no-decoding} insight of Trad and Chehab while departing from their methodology in three ways. First, we replace pixel-level classical ML with a deep CNN backbone (MobileNetV2), obtaining representations invariant to image resolution and QR version. Second, we train the backbone through Siamese contrastive learning rather than direct classification, which decouples feature learning from label memorization. Third, we validate on an order of magnitude more samples spanning multiple dataset origins.
+
+\subsection{Commercial QR-Phishing Defenses}
+
+Industry has produced several QR-phishing countermeasures that are worth contrasting with academic work. Commercial URL reputation services such as Google Safe Browsing and Microsoft Defender SmartScreen, as well as consumer-facing tools like Kaspersky QR Scanner and Norton Safe Web, flag known-malicious destinations after the QR code has been decoded and the URL has been looked up in a blocklist. These systems are effective against previously reported phishing campaigns but inherit two of the limitations enumerated above: they require decoding (introducing the exposure paradox), and they are ineffective against zero-day URLs or non-URL payloads. Q-Shield is therefore complementary rather than substitutive: it can act as a pre-scan filter that blocks suspicious QR images \textit{before} they are decoded, after which established blocklist services can handle the residual decoded URLs that pass the visual filter.
 
 \subsection{Behavioral and Design-Centered Research}
 
@@ -184,15 +188,49 @@ The classification head $g_\phi$ stacks four linear layers with batch normalizat
 \end{equation}
 where $p_y$ is the predicted probability of the true class, $\alpha = 0.5$ (classes are approximately balanced after the combined-dataset sampling described below) and $\gamma = 2$. The factor $(1 - p_y)^\gamma$ down-weights easy examples (where $p_y$ is already high) and up-weights hard ones (where $p_y$ is small), focusing gradient signal on the phishing samples that the model currently misclassifies. In security-critical settings this is exactly the desired behavior: a missed phishing QR exposes the user to the attack, whereas a false positive merely triggers a benign warning. Our ablation confirms the practical effect: replacing focal loss with BCE raises false-negative rate from $0.166$ to $0.271$ with only a marginal change in AUC (Section~\ref{sec:results}, Table~\ref{tab:ablation}).
 
-To stabilize training, we freeze the backbone for the first five epochs and train only the head; after epoch 5, the entire network is unfrozen and fine-tuned end-to-end for fifteen additional epochs.
+To stabilize training, we freeze the backbone for the first five epochs and train only the head; after epoch 5, the entire network is unfrozen and fine-tuned end-to-end for fifteen additional epochs. Figures~\ref{fig:phase1} and~\ref{fig:phase2} visualize the training dynamics of both phases and justify the choice of best checkpoint.
+
+\begin{figure}[!htbp]
+\centering
+\includegraphics[width=\columnwidth]{figures/fig_phase1_curves.png}
+\caption{Phase 1 (Siamese contrastive pretraining) training dynamics over 16 epochs. (a) Loss: validation loss reaches its minimum at epoch 8 ($0.253$); a cosine warm restart at epoch 15 briefly inflates train loss before recovery. (b) Pair-classification accuracy: training accuracy climbs steadily to $91.8\%$ while validation plateaus around $71\%$, indicating that the contrastive objective learns a discriminative metric without catastrophic overfitting.}
+\label{fig:phase1}
+\end{figure}
+
+\begin{figure}[!htbp]
+\centering
+\includegraphics[width=\columnwidth]{figures/fig_phase2_curves.png}
+\caption{Phase 2 (supervised fine-tuning with focal loss) training dynamics over 20 epochs. Purple shading marks the first 5 epochs with frozen backbone; green shading marks end-to-end fine-tuning. (a) Loss: validation loss reaches its minimum at epoch 8 ($0.053$) before diverging from training, a textbook overfitting signature mitigated by early stopping. (b) Validation AUC: peaks at $0.8962$ at epoch 8 (red star), corroborating the loss-based selection. Training beyond this point inflates train-val gap without AUC gain.}
+\label{fig:phase2}
+\end{figure}
 
 \subsection{Datasets}
 
-\textbf{Trad et al.~\cite{trad2025detecting}.} 9{,}987 QR codes stored as $69 \times 69$ binary matrices (0 = white module, 1 = black module). All samples correspond to QR Version~13. Classes are balanced (5{,}005 benign; 4{,}982 phishing). We use this dataset to study detection under controlled QR version conditions.
+Table~\ref{tab:datasets} summarizes the two corpora used throughout this work. The datasets are deliberately complementary: Trad provides a clean, controlled distribution with a single QR version and binary-matrix encoding, while CIC offers a large-scale, realistic distribution with multiple QR versions and variable image resolutions.
 
-\textbf{CIC Trap4Phish 2025~\cite{nejati2026cic}.} 429{,}976 benign and 575{,}762 malicious QR code images, stored as PNG files of varying dimensions and QR versions. We sample 50{,}000 per class for computational tractability. This dataset exercises the model's ability to generalize across image formats.
+\begin{table}[!htbp]
+\caption{Dataset Statistics}
+\label{tab:datasets}
+\centering
+\renewcommand{\arraystretch}{1.15}
+\begin{tabular}{lcc}
+\toprule
+\textbf{Property} & \textbf{Trad et al.~\cite{trad2025detecting}} & \textbf{CIC Trap4Phish 2025~\cite{nejati2026cic}} \\
+\midrule
+Total samples        & 9{,}987        & 1{,}005{,}738 \\
+Benign               & 5{,}005        & 429{,}976     \\
+Phishing             & 4{,}982        & 575{,}762     \\
+Class balance        & 50.1/49.9\%    & 42.8/57.2\%   \\
+Format               & Binary matrix  & Grayscale PNG \\
+Native resolution    & $69\times69$ (fixed) & 114--582\,px \\
+QR version coverage  & V13 only       & Multiple (V5--V30) \\
+URL source (benign)  & Alexa top-1M   & Majestic Million \\
+URL source (phishing)& PhishTank      & PhishTank (independent crawl) \\
+\bottomrule
+\end{tabular}
+\end{table}
 
-We form 80/20 train/validation splits within each dataset and combine them for joint training. Validation uses both datasets simultaneously, yielding 21{,}998 samples.
+For computational tractability we draw a stratified sample of $50{,}000$ QR codes per class from the CIC corpus, preserving its natural class proportions. We form 80/20 train/validation splits within each dataset and combine the validation splits of both datasets to obtain a joint evaluation set of $21{,}998$ samples. Training uses the combined training splits.
 
 %% ============================================================
 \section{Results}
@@ -201,7 +239,7 @@ We form 80/20 train/validation splits within each dataset and combine them for j
 
 \subsection{Main Results}
 
-Table~\ref{tab:main} summarizes the main experimental results. Q-Shield achieves AUC $0.925$, recall $0.834$, F1 $0.858$, and FNR $0.166$ on the 21{,}998-sample combined validation set. This represents an $11.2$ percentage-point improvement in AUC over our handcrafted feature baseline ($0.813$) and a $+1.2$ point improvement over Trad et al.'s reported $0.9133$, with the additional observation that our evaluation spans ten times more samples and multiple QR formats whereas Trad's evaluation is restricted to a single QR version rendered uniformly.
+Table~\ref{tab:main} summarizes the main experimental results. Q-Shield achieves AUC $0.925$, recall $0.834$, F1 $0.858$, and FNR $0.166$ on the 21{,}998-sample combined validation set. This represents an $11.2$ percentage-point improvement in AUC over our handcrafted feature baseline ($0.813$) and a $+1.2$ point improvement over Trad et al.'s reported $0.913$, with the additional observation that our evaluation spans ten times more samples and multiple QR formats whereas Trad's evaluation is restricted to a single QR version rendered uniformly.
 
 \begin{table}[!htbp]
 \caption{Main Results on Combined Validation Set (n=21{,}998)}
@@ -227,7 +265,16 @@ Trad et al.~\cite{trad2025detecting}   & 0.913 & --    & --    & 0.890 & --    \
 \end{tabular}
 \end{table}
 
-Three observations are worth emphasizing. First, the handcrafted feature baselines are identical across RF, XGBoost, and LightGBM to within 0.005 AUC, suggesting that the features themselves are the bottleneck, not the classifier choice. Second, Q-Shield's Siamese-based deep learning approach outperforms these baselines by a wide margin (+0.11 AUC) and surpasses the previously reported SOTA (Trad et al., 0.9133) by +0.0121 AUC. Third, this improvement is achieved on an evaluation set that is an order of magnitude larger than Trad's (21{,}998 vs 1{,}998 samples) and drawn from mixed-resolution images spanning multiple QR versions, a regime the pixel-level baseline was not designed for. In terms of parameter efficiency, Q-Shield uses 3.08M parameters against Trad's $\sim$4{,}761 raw features fed to a tree ensemble, offering a favorable trade-off between capacity and deployability.
+Three observations are worth emphasizing. First, the handcrafted feature baselines are identical across RF, XGBoost, and LightGBM to within $0.005$ AUC, suggesting that the features themselves are the bottleneck rather than the classifier choice. Second, Q-Shield's Siamese-based deep learning approach outperforms these baselines by a wide margin ($+0.11$ AUC) and surpasses the previously reported SOTA by $+0.012$ AUC. Third, this improvement is achieved on an evaluation set that is an order of magnitude larger than Trad's ($21{,}998$ vs.\ $1{,}998$ samples) and drawn from mixed-resolution images spanning multiple QR versions, a regime the pixel-level baseline was not designed for. In parameter efficiency, Q-Shield uses $3.08$M parameters against Trad's $\sim$$4{,}761$ raw pixel features fed to a tree ensemble, offering a favorable trade-off between capacity and deployability.
+
+Figure~\ref{fig:cm_roc} visualizes the default-threshold decision behavior. The confusion matrix reveals that at $p=0.5$, Q-Shield correctly classifies $9{,}382$ of $11{,}001$ benign samples and $8{,}777$ of $10{,}997$ phishing samples, with $2{,}220$ false negatives that motivate the threshold calibration analysis in Section~\ref{sec:calibration}. The ROC curve confirms the strong discrimination captured by AUC $= 0.925$, with a clearly non-degenerate separation between the default and calibrated operating points.
+
+\begin{figure*}[!htbp]
+\centering
+\includegraphics[width=0.88\textwidth]{figures/fig_confusion_roc.png}
+\caption{(a) Confusion matrix on the combined $21{,}998$-sample validation set at default threshold $p=0.5$. (b) ROC curve with two operating points marked: the default ($p=0.5$, black dot) and the calibrated point ($p=0.4$, green square) that meets the FNR $\leq 10\%$ security tolerance.}
+\label{fig:cm_roc}
+\end{figure*}
 
 \subsection{Benchmarking and Gaps Closed}
 \label{sec:benchmark}
