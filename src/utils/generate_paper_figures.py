@@ -1,11 +1,5 @@
-"""
-Generate 3 additional publication-quality figures for the Q-Shield paper:
-1. Confusion matrix + ROC curve combined
-2. Phase 1 training curves (contrastive pretraining)
-3. Phase 2 training curves (supervised classification)
-
-All data comes from the v3 run on the combined Trad + CIC validation set.
-"""
+"""Paper figures: confusion matrix + ROC, Phase 1 curves, Phase 2 curves.
+Data is the v3 run on the combined Trad + CIC validation set."""
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
@@ -22,16 +16,15 @@ plt.rcParams.update({
     'ytick.labelsize': 9,
 })
 
-# ==========================================================
 # FIGURE 1: Confusion Matrix + ROC Curve
-# ==========================================================
-# Data from v3 run (notebook 06) on n=21,998 validation samples at threshold 0.5
-# At threshold 0.5: TN=9382, FP=1619, FN=2220, TP=8777
+# Data from the full ensemble (2 seeds + TTA) on n=21,998 validation samples
+# at threshold 0.5. Reproduced by notebooks/eval_ensemble_tta.py.
+# At threshold 0.5: TN=9703, FP=1298, FN=2192, TP=8805
 # Total = 21,998
 # Class distribution: 11,001 benign (TN+FP) / 10,997 phishing (FN+TP)
 
-cm = np.array([[9382, 1619], [2220, 8777]])
-auc_value = 0.9254
+cm = np.array([[9703, 1298], [2192, 8805]])
+auc_value = 0.9146
 
 # Approximate a smooth ROC curve from the known AUC and threshold sweep
 # Using the threshold sweep data from notebook 09 (audit)
@@ -78,9 +71,7 @@ plt.savefig('figures/fig_confusion_roc.png', dpi=300, bbox_inches='tight', facec
 print('Saved: figures/fig_confusion_roc.png')
 plt.close()
 
-# ==========================================================
 # FIGURE 2: Phase 1 Training Curves
-# ==========================================================
 phase1_tr_loss = [0.2522, 0.1939, 0.1582, 0.1434, 0.1315, 0.1226, 0.1153, 0.1094,
                   0.1030, 0.0962, 0.0888, 0.0834, 0.0787, 0.0760, 0.0735, 0.1004]
 phase1_va_loss = [0.2826, 0.2705, 0.2602, 0.2589, 0.2593, 0.2637, 0.2693, 0.2529,
@@ -121,9 +112,7 @@ plt.savefig('figures/fig_phase1_curves.png', dpi=300, bbox_inches='tight', facec
 print('Saved: figures/fig_phase1_curves.png')
 plt.close()
 
-# ==========================================================
 # FIGURE 3: Phase 2 Training Curves
-# ==========================================================
 phase2_tr_loss = [0.0711, 0.0694, 0.0689, 0.0683, 0.0682, 0.0532, 0.0472, 0.0434,
                   0.0398, 0.0369, 0.0334, 0.0303, 0.0269, 0.0231, 0.0201, 0.0173,
                   0.0147, 0.0131, 0.0121, 0.0112]

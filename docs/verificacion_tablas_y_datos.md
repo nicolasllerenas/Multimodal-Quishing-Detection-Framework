@@ -35,7 +35,9 @@
 | 2 | XGBoost + 25 feat | 0.810 | 0.785 | 0.664 | 0.720 | 0.336 | notebook 02 |
 | 3 | LightGBM + 25 feat | 0.808 | 0.771 | 0.670 | 0.717 | 0.330 | notebook 02 |
 | 4 | Trad reported (1,998 eval samples) | 0.913 | — | — | 0.890 | — | arXiv 2505.03451 Table 3 |
-| 5 | **Q-Shield Siamese** | **0.925** | **0.844** | **0.834** | **0.858** | **0.166** | notebook 07 + 08 A1 |
+| 5a | Q-Shield single seed (real) | 0.8962 | 0.844 | 0.798 | 0.821 | 0.202 | eval_v3_on_full_set.py |
+| 5b | Q-Shield single seed + TTA  | 0.9053 | 0.853 | 0.799 | 0.825 | 0.201 | eval_v3_tta.py |
+| 5c | **Q-Shield ensemble + TTA** | **0.9146** | **0.872** | **0.801** | **0.835** | **0.199** | eval_ensemble_tta.py |
 
 **TODOS los numeros de nuestra fila (5) vienen de ejecuciones reales reproducibles.**
 
@@ -45,7 +47,7 @@
 |-------|-----|--------|-----|-----|--------|
 | CV1: Train CIC → Test Trad | 0.7178 | 1.000 | 0.666 | 0.000 | notebook 08 CV1 |
 | CV2: Train Trad → Test CIC | 0.5181 | 0.508 | 0.517 | 0.492 | notebook 08 CV2 |
-| CV3: Combined (ours) | **0.9254** | **0.834** | **0.858** | **0.166** | notebook 08 CV3 / A1 |
+| CV3: Combined (single seed) | **0.8962** | **0.798** | **0.821** | **0.202** | eval_v3_on_full_set.py |
 
 **Observacion:** CV1 recall=1.000 es consecuencia matematica de FNR=0 (classifier predice todo positivo).
 
@@ -53,11 +55,13 @@
 
 | Variant | AUC | Recall | F1 | FNR | Fuente |
 |---------|-----|--------|-----|-----|--------|
-| A1: Full Q-Shield | 0.9254 | 0.834 | 0.858 | 0.166 | notebook 08 A1 |
+| A1: Full Q-Shield (single seed) | 0.8962 | 0.798 | 0.821 | 0.202 | eval_v3_on_full_set.py |
 | A2: No Siamese pretrain | 0.8764 | 0.733 | 0.785 | 0.267 | notebook 08 A2 |
 | A3: BCE (no focal) | 0.8771 | 0.729 | 0.786 | 0.271 | notebook 08 A3 |
 | A4: No frozen start | 0.8810 | 0.770 | 0.801 | 0.230 | notebook 08 A4 |
 | A5: Small head | 0.8752 | 0.771 | 0.794 | 0.229 | notebook 08 A5 |
+| B1: Full + TTA | 0.9053 | 0.799 | 0.825 | 0.201 | eval_v3_tta.py |
+| B2: Ensemble + TTA | 0.9146 | 0.801 | 0.835 | 0.199 | eval_ensemble_tta.py |
 
 ### Table VI — Embedding Distance Statistics
 
@@ -147,11 +151,15 @@ Estos son REPRODUCIBLES con notebook 02. Los numeros fueron capturados del outpu
 
 | Numero | ¿Donde? | Consistente? |
 |--------|---------|-------------|
-| 0.925 | Abstract, Table III, Table V, Section IV | Yes |
-| 0.8576 o 0.858 | Abstract, Table III, Table V, Section IV | Depende del redondeo — validar |
-| 0.1662 o 0.166 | Abstract, Table III, Table V, Section IV | Depende del redondeo |
+| 0.9146 (ensemble + TTA) | Abstract, Table III row 3, Section IV | Yes |
+| 0.8962 (single seed) | Table III row 1, Table V A1, Table V CV3 | Yes |
+| 0.835 / 0.8346 (ensemble F1) | Abstract, Table III row 3 | Yes |
+| 0.821 / 0.8207 (single seed F1) | Table III row 1, Table V A1 | Yes |
+| 0.199 / 0.1993 (ensemble FNR) | Abstract, Table III row 3 | Yes |
+| 0.202 / 0.2017 (single seed FNR) | Table III row 1, Table V A1 | Yes |
 | 21,998 | Abstract, Section IV, Tables | Yes |
-| 2.9M params | Abstract, Section IV, Section V | Yes |
+| 3.08M params (per model) | Abstract, Section IV, Section V | Yes |
+| 6.16M params (ensemble) | Section IV inference cost | Yes |
 | 1.94 separation ratio | Abstract, Section V XAI | Yes |
 | m=1.5 margin | Methodology eq (2), ablation | Yes |
 

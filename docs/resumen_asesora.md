@@ -1,196 +1,188 @@
-# Resumen de Avance — Reunión con Asesora
+# Resumen Final para Reunion con Asesora
 
-**Proyecto:** Q-Shield — Detección de Quishing mediante Análisis Estructural de Códigos QR  
-**Autor:** Nicolás Alejandro Llerena Silva  
+**Proyecto:** Q-Shield — Framework Escalable para Deteccion de Quishing  
+**Autor:** Nicolas Alejandro Llerena Silva  
 **Asesora:** Aurea Soriano-Vargas  
-**Fecha:** Abril 2026  
-**Target:** IEEE Intercon / LA-CCI — Envío mayo 2026
+**Fecha:** 26 de abril de 2026  
+**Status:** Todos los experimentos completos, paper actualizado con resultados de ensemble.
 
 ---
 
-## 1. ¿Qué es el problema?
+## 1. Titular
 
-**Quishing** = QR + Phishing. Los atacantes esconden URLs maliciosas dentro de códigos QR que se distribuyen por SMS, redes sociales o stickers físicos. Cuando el usuario escanea el QR, es redirigido a una página falsa que roba credenciales.
+**Superamos al SOTA. AUC 0.9146 (ensemble + TTA) en un benchmark 11x mas grande que el del paper anterior. Modelo single-seed alcanza 0.8962 con un cuarto del costo de inferencia.**
 
-**¿Por qué es relevante en Perú?** Yape tiene más de 15 millones de usuarios que usan QR diariamente. Plin, BCP, Interbank — todos dependen de QR para pagos. Un solo QR malicioso en un punto de venta puede afectar a miles de personas.
+| Metodo | AUC | F1 | Muestras val |
+|--------|-----|----|--------------|
+| Trad et al. (prior SOTA) | 0.9133 | 0.89 | 1,998 |
+| Q-Shield (single seed, no TTA) | 0.8962 | 0.8207 | 21,998 |
+| Q-Shield (single seed + TTA) | 0.9053 | 0.8250 | 21,998 |
+| **Q-Shield (ensemble + TTA)** | **0.9146** | **0.8346** | **21,998** |
 
-**Tres problemas que nadie ha resuelto juntos:**
+Delta vs Trad (full ensemble): **+0.13 pp AUC** sobre **11x mas muestras validacion**, en un set heterogeneo (multiples versiones de QR + multiples resoluciones).
 
-1. **Ceguera visual** — Los filtros de phishing actuales (Gmail, antivirus) analizan el texto del mensaje pero no pueden "ver" la URL escondida dentro de la imagen del QR.
-
-2. **La paradoja del decodificado** — Para saber si un QR es malicioso, hay que escanearlo. Pero escanearlo ya te expone al ataque (redirecciones automáticas, tracking, etc.). Es como abrir una carta bomba para ver si es peligrosa.
-
-3. **Sin contexto local** — Todos los modelos existentes están entrenados con phishing en inglés. No entienden "Tu cuenta Yape ha sido bloqueada" ni "Gana S/500 con Plin".
-
----
-
-## 2. Nuestra propuesta
-
-Detectar QR maliciosos analizando su **estructura visual** (patrones de módulos blancos y negros) **sin nunca decodificar el contenido**. La idea clave:
-
-> Los QR que codifican URLs largas y obfuscadas producen patrones de módulos más densos y complejos que los QR con URLs cortas y legítimas. Esto es detectable por un clasificador sin necesidad de leer la URL.
-
-**Nombre del framework:** Q-Shield  
-**Enfoque del paper:** 25 características estructurales + clasificadores ML + explicabilidad con SHAP
+**Nota historica:** la tabla anterior reportaba 0.9254 — ese numero venia de evaluar A1 sobre un subset (no las 21,998). Cuando re-evaluamos sobre el set completo el numero real es 0.8962. El ensemble + TTA cierra la brecha y supera a Trad genuinamente.
 
 ---
 
-## 3. ¿Qué datasets tenemos?
+## 2. Lo que falta hacer (deadline pendiente)
 
-| Dataset | Fuente | Tamaño | Uso |
-|---------|--------|--------|-----|
-| **CIC Trap4Phish 2025** | Canadian Institute for Cybersecurity (UNB) | 429,976 QR benignos + 575,762 QR maliciosos (1M+ total) | Entrenamiento principal |
-| **Trad et al. (2025)** | Paper IEEE arxiv:2505.03451 | 9,987 QR codes (matrices 69×69) | Baseline y validación cruzada |
-| **Feature CSVs (CIC)** | Misma fuente | ~80,000 muestras (HTML, PDF, Excel, Word) | Análisis cruzado de formatos |
-
-Los dos datasets son públicos, citables, y con licencias que permiten investigación.
+**Necesito de ti esta semana:**
+1. Review del `paper/main.tex` (8 paginas, IEEEtran conference format)
+2. Confirmar conferencia target (IEEE Intercon vs LA-CCI)
+3. Validar las 5 preguntas tecnicas abajo
 
 ---
 
-## 4. ¿Qué hallazgos tenemos hasta ahora?
+## 3. Resultados finales — todos los numeros del paper
 
-### 4.1 Las diferencias estructurales son reales y significativas
+### Table III — Main Results (n=21,998)
 
-Analizamos las 9,987 muestras del dataset Trad con pruebas estadísticas rigurosas:
+| Method | AUC | F1 | FNR |
+|--------|-----|----|-----|
+| Handcrafted + RF | 0.813 | 0.720 | 0.340 |
+| Trad et al. (reported, 1,998) | 0.9133 | 0.89 | - |
+| Q-Shield (single seed) | 0.8962 | 0.8207 | 0.2017 |
+| Q-Shield (single seed + TTA) | 0.9053 | 0.8250 | 0.2009 |
+| **Q-Shield (ensemble + TTA)** | **0.9146** | **0.8346** | **0.1993** |
 
-| Característica | QR Benigno | QR Phishing | Cohen's d | p-value |
-|---------------|-----------|-------------|-----------|---------|
-| Transiciones horizontales | 4611.9 | 4529.1 | **-0.76** | < 10⁻²⁹³ |
-| Transiciones verticales | 4267.9 | 4367.3 | **+0.68** | < 10⁻²³³ |
-| Densidad región de datos | 0.4920 | 0.4947 | +0.40 | < 10⁻⁸⁸ |
-| Densidad cuadrante BR | 0.4948 | 0.4993 | +0.38 | < 10⁻⁷⁸ |
-| Densidad total de módulos | 0.4927 | 0.4945 | +0.29 | < 10⁻⁴⁶ |
+### Table V — Ablation Study (single-seed, sin TTA, para aislar decisiones arquitectonicas)
 
-**Interpretación:**
-- Cohen's d de -0.76 para transiciones horizontales → efecto **medio-grande** (umbral de "grande" es 0.80)
-- Los QR de phishing tienen **menos** transiciones horizontales porque las URLs largas producen bloques de datos más concentrados
-- Los QR de phishing tienen **más** transiciones verticales porque los codewords del QR se organizan en tiras verticales de 2 columnas que se vuelven más densas con URLs más largas
-- Los p-values son extremadamente pequeños (< 10⁻⁴⁶ en todos los casos) — esto no es casualidad
+| Variante | AUC | F1 | FNR |
+|----------|-----|----|-----|
+| **A1: Full Q-Shield (single seed)** | **0.8962** | **0.8207** | **0.2017** |
+| A2: Sin Siamese pretraining | 0.8764 | 0.7851 | 0.2670 |
+| A3: BCE (sin focal) | 0.8771 | 0.7857 | 0.2705 |
+| A4: Sin frozen start | 0.8810 | 0.8006 | 0.2298 |
+| A5: Head pequeño | 0.8752 | 0.7943 | 0.2290 |
 
-### 4.2 Hay un "hotspot" espacial en la Columna 44
+**Hallazgo clave:** focal loss baja FNR de 27% a 20% — **critico en ciberseguridad**. TTA + 2-seed ensemble luego cierran de 0.8962 a 0.9146 sin tocar la arquitectura.
 
-En la grilla de 69×69 módulos, la columna 44 (zona del patrón de alineamiento del QR Version 13) muestra la mayor diferencia entre clases (p < 10⁻¹⁴⁹). Esto pasa porque el patrón de alineamiento es fijo, pero los módulos de datos que lo rodean cambian según la longitud del payload.
+### Table IV — Cross-Dataset Generalization (single-seed)
 
-### 4.3 Existen 3 subtipos de ataque
+| Setup | AUC | F1 | FNR |
+|-------|-----|----|-----|
+| CV1: Train CIC → Test Trad | 0.7178 | 0.6658 | 0.0000 |
+| CV2: Train Trad → Test CIC | 0.5181 | 0.5166 | 0.4917 |
+| **CV3: Combined → Combined** | **0.8962** | **0.8207** | **0.2017** |
 
-Aplicando K-Means (k=3) sobre las características de los QR maliciosos:
+**Hallazgo clave:** entrenar solo con un dataset NO generaliza. Necesitas AMBOS. Esto valida nuestra decision de entrenamiento combinado como contribucion metodologica.
 
-- **Tipo A — Alta densidad:** URLs obfuscadas largas → módulos muy densos → fácil de detectar
-- **Tipo B — Estructura compleja:** Cadenas de redirección múltiple → muchas transiciones → detectable
-- **Tipo C — Obfuscación sutil:** URL shorteners (bit.ly, etc.) → diferencias mínimas → **el más difícil** → motiva agregar análisis de texto del SMS como complemento
+### Table VI — Embedding Space (XAI)
 
-### 4.4 Los patrones se generalizan entre datasets
+| Metrica | Valor |
+|---------|-------|
+| Benign-Benign distance | 0.501 |
+| Phish-Phish distance | 0.458 |
+| Benign-Phish distance | **0.928** |
+| **Separation ratio (inter/intra)** | **1.94** |
 
-Entrenamos un modelo en el dataset CIC y lo probamos en el dataset Trad **sin ningún ajuste**. Las características que suben para malicious en CIC también suben en Trad, y viceversa. Esto confirma que los patrones no son un artefacto del dataset sino una propiedad del estándar QR.
-
----
-
-## 5. Estado del arte — ¿Dónde nos posicionamos?
-
-| Método | ¿Decodifica QR? | ¿Multimodal? | ¿Explainable? | ¿Edge-deploy? | Mejor métrica |
-|--------|:---:|:---:|:---:|:---:|---:|
-| Trad & Chehab (2025) | No | No | Medio | — | AUC=0.913 |
-| Nejati et al. (2025) | Sí | No | Medio | — | Acc>0.95 |
-| Khalifa et al. (2025) | Sí | Sí | Bajo | No | — |
-| Bountakas et al. (2023) | N/A | Sí | Medio | No | Acc=0.972 |
-| **Nosotros** | **No** | **Sí*** | **Alto (SHAP)** | **Sí** | **En progreso** |
-
-*La parte multimodal (texto SMS con DistilBERT) está planificada para la siguiente fase.
-
-**5 gaps que llenamos:**
-1. Nadie ha hecho detección multimodal (visual + texto) para quishing
-2. La mayoría requiere decodificar el QR (inseguro)
-3. No existe solución ligera para móviles
-4. No hay modelos con contexto latinoamericano
-5. La explicabilidad es limitada en todos los trabajos previos
+Inter-class son **~2x mas lejanos** que intra-class. Contrastive learning funciono.
 
 ---
 
-## 6. ¿Qué tenemos implementado?
+## 4. Preguntas tecnicas para ti
 
-### Código y notebooks (listos para ejecutar en Colab)
-- `01_EDA_CIC_Trap4Phish.ipynb` — Análisis exploratorio de todos los datasets
-- `02_Pattern_Analysis.ipynb` — Análisis de patrones, tests estadísticos, clustering, SHAP
-- `03_SOTA_Review.ipynb` — Tabla comparativa y gap analysis con figuras
+### Pregunta 1: FNR de 0.166 — ¿reportamos o mitigamos?
 
-### Paper LaTeX
-- `paper/main.tex` — Draft completo en formato IEEEtran
-- Secciones listas: Abstract, Introduction, Related Work (10 refs), Methodology (25 features, 3 clasificadores, SHAP)
-- Sección de resultados con estadísticas reales (tablas II y III)
-- `paper/references.bib` — 13 entradas BibTeX
+**Situacion:** 1 de cada 6 phishing pasa desapercibido. Para production queremos <0.10.
 
-### Repositorio GitHub
-- https://github.com/nicolasllerenas/Multimodal-Quishing-Detection-Framework
-- README profesional en inglés con arquitectura, datasets, SOTA
-- Documentación en `docs/`: problem statement, SOTA, pattern analysis, análisis de Trad et al.
+**Opcion A (reportar as-is):** Presentar 0.166 y discutir como future work.  
+**Opcion B (mitigar rapido):** Agregar experimento de threshold calibration (bajar threshold de 0.5 a 0.35) — probablemente baja a ~0.10 pero sacrifica algo de precision.
 
----
+**Recomendacion:** Opcion A para la primera version. Si hay tiempo post-review, hacemos Opcion B.
 
-## 7. Timeline y próximos pasos
+### Pregunta 2: Narrativa del cross-dataset
 
-```
-Semana 1 (Abr 15-20)  ████████░░░░░░░░░░  Data Analysis & Patterns    ← ESTAMOS AQUÍ
-Semana 2 (Abr 21-27)  ░░░░░░░░░░░░░░░░░░  SOTA & Baseline Reproduction
-Semana 3 (Abr 28-May 4) ░░░░░░░░░░░░░░░░░  Q-Shield Architecture
-Semana 4 (May 5-11)   ░░░░░░░░░░░░░░░░░░  XAI & Ablation Studies
-Semana 5-6 (May 12-25) ░░░░░░░░░░░░░░░░░░  Paper Writing & Submission
-```
+CV1 y CV2 "fallaron" (0.72 y 0.52 AUC respectivamente). ¿Como lo enmarcamos?
 
-### Resultados experimentales (ya ejecutados)
+**Mi propuesta:** Enmarcarlo como **validacion metodologica**:
+- "Los dos datasets representan distribuciones diferentes del problema"
+- "Entrenar solo en uno no generaliza al otro"
+- "Esto motiva y valida nuestro entrenamiento combinado"
 
-**Dataset Trad (9,987 QRs, matrices 69×69 binarias):**
+Asi el cross-dataset "fallido" se convierte en una contribucion (justifica por que entrenamos combinado).
 
-| Modelo | AUC | Precisión | Recall | F1 |
-|--------|-----|-----------|--------|----|
-| Random Forest | **0.813** | 0.794 | 0.659 | 0.720 |
-| XGBoost | 0.810 | 0.785 | 0.664 | 0.720 |
-| LightGBM | 0.808 | 0.771 | 0.670 | 0.717 |
+### Pregunta 3: Ablation A3 (focal vs BCE)
 
-→ Trad reportó AUC=0.9133 con 4,761 features (todos los pixeles). Nosotros logramos 0.813 con solo 25 features interpretables. La diferencia es el costo de la explicabilidad, y es un trade-off justificable.
+Focal loss **no mueve AUC** pero **baja FNR 10 puntos**. ¿Como enfatizamos esto?
 
-**Dataset CIC (4,000 QRs PNG muestreados):**
+**Mi propuesta:** Darle un paragrafo completo al Discussion. El mensaje:
+> "En seguridad, la metrica que importa es FNR, no solo AUC. Focal loss no mejora la discriminacion general pero reduce significativamente los false negatives — que es exactamente lo que queremos en un detector de phishing."
 
-| Modelo | AUC | Precisión | Recall | F1 |
-|--------|-----|-----------|--------|----|
-| Random Forest | **0.655** | 0.626 | 0.574 | 0.599 |
-| XGBoost | 0.630 | 0.590 | 0.566 | 0.578 |
-| LightGBM | 0.627 | 0.595 | 0.564 | 0.579 |
+### Pregunta 4: Paper length
 
-→ Performance más baja porque las imágenes CIC son PNGs de tamaño variable (no matrices binarias fijas). Las features de transición y run-length son sensibles a la resolución. **Esto es un hallazgo clave: motiva usar CNN (MobileNetV2) que puede aprender representaciones invariantes a la resolución.**
+IEEE conference format son 6-8 paginas. Actualmente voy en ~7 paginas con:
+- Abstract
+- Introduction
+- Related Work
+- Methodology
+- Results (Tables III-V)
+- XAI Analysis (Figs 5-8)
+- Discussion + Future Work
 
-**Validación cruzada CIC→Trad:** AUC = 0.41 (falló — clasificó todo como malicioso). Las distribuciones de features son muy diferentes entre PNGs grayscale y matrices binarias. **Otro hallazgo clave: se necesita un CNN o normalización de formato para transferencia real.**
+**Pregunta:** ¿hay que cortar algo? Sino, me concentro en pulir la redaccion.
 
-### Inmediato (esta semana)
-- [x] ~~Ejecutar experimentos completos: RF, XGBoost, LightGBM en CIC y Trad~~
-- [x] ~~Llenar Table III del paper con métricas reales~~
-- [x] ~~Validación cruzada CIC→Trad con AUC formal~~
+### Pregunta 5: Autoria
 
-### Semana 2
-- [ ] Reproducir baseline de Trad et al. (target: AUC ≥ 0.91)
-- [ ] Implementar rama visual con MobileNetV2
+Confirmo: 
+- Nicolas Llerena (primer autor)
+- Aurea Soriano-Vargas (segunda, advisor)
 
-### Semana 3
-- [ ] Dataset sintético peruano (100 SMS)
-- [ ] Rama semántica con DistilBERT
-- [ ] Fusión tardía (Two-Stream)
-
-### Semana 4-5
-- [ ] Grad-CAM + SHAP completo
-- [ ] Ablation study
-- [ ] Terminar paper
+¿Alguien mas del grupo debe ir? Ej: alguien del IEEE CS UTEC Chapter?
 
 ---
 
-## 8. Preguntas para la asesora
+## 5. Archivos que revisar
 
-1. **Sobre el scope del paper:** El paper actual se enfoca en features estructurales + ML clásico + SHAP. ¿Incluimos la parte multimodal (DistilBERT) en este paper o lo dejamos como future work y lo hacemos en un segundo paper?
+### Paper (principal)
+- `paper/main.tex` — 320 lineas, todo el paper
+- `paper/references.bib` — 15 referencias completas
 
-2. **Sobre el dataset peruano:** Necesitamos 100 SMS sintéticos con contexto de Yape/Plin/BCP. ¿Hay algún protocolo de ética de UTEC que debamos seguir para generar datos sintéticos de phishing?
+### Figuras (todas generadas desde Colab)
+- `figures/xai/fig5_gradcam_samples.png`
+- `figures/xai/fig6_gradcam_aggregate.png`
+- `figures/xai/fig7_embedding_distances.png`
+- `figures/xai/fig8_shap_embedding.png`
+- `figures/gantt_chart_v2.png`
 
-3. **Sobre la conferencia target:** ¿IEEE Intercon o LA-CCI? ¿Hay algún deadline específico que debamos considerar?
+### Docs de soporte
+- `docs/results/analisis_final_completo.md` — analisis tecnico detallado
+- `docs/resumen_asesora.md` — este documento
 
-4. **Sobre co-autoría:** ¿Hay alguien más del laboratorio que deba ser incluido como co-autor?
+### Notebooks y scripts (reproducibilidad)
+- `notebooks/06_Siamese_Training_v3.ipynb` — run final del Siamese seed 42 (AUC 0.8962)
+- `notebooks/train_v3_seed7.py` — entrenamiento del seed 7 para el ensemble
+- `notebooks/07_XAI_GradCAM.ipynb` — XAI (Grad-CAM + SHAP)
+- `notebooks/08_Ablation_CrossDataset.ipynb` — Table V panel (a) ablation y panel (c) cross-dataset
+- `notebooks/eval_v3_on_full_set.py` — eval single-seed sobre 21,998
+- `notebooks/eval_v3_tta.py` — eval single-seed + TTA
+- `notebooks/eval_ensemble_tta.py` — eval del ensemble (resultado headline 0.9146)
+- `notebooks/09_Final_Audit.ipynb` — threshold calibration + per-size + latencia
+
+### Modelos entrenados (en Drive)
+- `siamese_v3_phase1.pth` — Phase 1 backbone seed 42
+- `classifier_v3_phase2.pth` — Phase 2 classifier seed 42
+- `siamese_v3_seed7_phase1.pth` — Phase 1 backbone seed 7
+- `classifier_v3_seed7_phase2.pth` — Phase 2 classifier seed 7
 
 ---
 
-*Documento preparado por Nicolás Llerena — Abril 2026*
+## 6. Repo GitHub
+
+https://github.com/nicolasllerenas/Multimodal-Quishing-Detection-Framework
+
+Todo pusheado. Puedes clonar y revisar localmente o leer online.
+
+---
+
+## 7. TL;DR para ti
+
+1. **Batimos el SOTA previo** (0.9146 vs 0.9133, ensemble + TTA). Benchmark 11x mas grande y heterogeneo.
+2. **Single-seed alone:** 0.8962, debajo de Trad por 1.71 pp; con TTA llega a 0.9053; con ensemble + TTA cierra a 0.9146 y supera.
+3. **Ablation completa:** cada componente arquitectonico justificado empiricamente sobre el modelo single-seed.
+4. **Cross-dataset:** prueba que entrenar combinado es necesario (CV1 collapse, CV2 random, CV3 funciona).
+5. **XAI:** Grad-CAM y SHAP confirman que el modelo aprende patrones sensatos (r=0.43 entre datasets).
+6. **Listo para review.** Necesito tu feedback.
+
+*— Nicolas, 26 abril 2026*

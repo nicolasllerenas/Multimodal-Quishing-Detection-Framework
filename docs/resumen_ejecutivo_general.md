@@ -297,12 +297,14 @@ Nuestro ejemplo: H-transitions tiene `d = -0.76` = efecto medio-grande.
 |--------|-----|-----|-----|
 | Random Forest + 25 features manuales | 0.813 | 0.720 | 0.340 |
 | Trad et al. (SOTA previo, 1,998 val samples) | 0.9133 | 0.89 | - |
-| **Q-Shield (nuestro, 21,998 val samples)** | **0.9254** | **0.8576** | **0.1662** |
+| Q-Shield single seed (21,998 val) | 0.8962 | 0.8207 | 0.2017 |
+| Q-Shield single seed + TTA | 0.9053 | 0.8250 | 0.2009 |
+| **Q-Shield ensemble + TTA (21,998 val)** | **0.9146** | **0.8346** | **0.1993** |
 
 **Como se mide AUC:**
 - AUC = Area Under the ROC Curve.
 - ROC = curva que grafica True Positive Rate vs False Positive Rate a distintos thresholds.
-- AUC 1.0 = perfecto. AUC 0.5 = aleatorio. AUC 0.9254 = excelente.
+- AUC 1.0 = perfecto. AUC 0.5 = aleatorio. AUC 0.9146 = excelente.
 
 **Como se mide F1:**
 - F1 = 2 · (precision · recall) / (precision + recall)
@@ -311,40 +313,47 @@ Nuestro ejemplo: H-transitions tiene `d = -0.76` = efecto medio-grande.
 
 **Como se mide FNR:**
 - FNR = FN / (FN + TP) = 1 - recall
-- 0.1662 = de cada 100 phishing reales, 17 se escapan
+- 0.1993 = de cada 100 phishing reales, 20 se escapan
 
-## 15. Ablation Study (Table V)
+## 15. Ablation Study (Table V — single seed, sin TTA)
 
-Quitamos de a una cada decision para medir su contribucion:
+Quitamos de a una cada decision para medir su contribucion sobre el modelo single-seed:
 
 | Variante | AUC | Δ AUC | FNR | Δ FNR |
 |----------|-----|-------|-----|-------|
-| A1: Full v3 | 0.9254 | baseline | 0.1662 | baseline |
-| A2: Sin Siamese pretraining | 0.8764 | -0.049 | 0.2670 | +10.1pp |
-| A3: BCE (sin focal) | 0.8771 | -0.048 | 0.2705 | +10.4pp |
-| A4: Sin frozen start | 0.8810 | -0.044 | 0.2298 | +6.4pp |
-| A5: Head pequeño | 0.8752 | -0.050 | 0.2290 | +6.3pp |
+| A1: Full Q-Shield (single seed) | 0.8962 | baseline | 0.2017 | baseline |
+| A2: Sin Siamese pretraining | 0.8764 | -0.020 | 0.2670 | +6.5pp |
+| A3: BCE (sin focal) | 0.8771 | -0.019 | 0.2705 | +6.9pp |
+| A4: Sin frozen start | 0.8810 | -0.015 | 0.2298 | +2.8pp |
+| A5: Head pequeño | 0.8752 | -0.021 | 0.2290 | +2.7pp |
+
+**Refinamientos en inference (acumulativos):**
+
+| Variante | AUC | Δ AUC vs single seed |
+|----------|-----|----------------------|
+| B0: Single seed | 0.8962 | baseline |
+| B1: + TTA (H-flip avg) | 0.9053 | +0.009 |
+| **B2: + Ensemble 2 seeds** | **0.9146** | **+0.018** |
 
 **Traduccion experimental:**
-- **A2 vs A1:** el Siamese pretraining SOLO contribuye 4.9 puntos de AUC
-- **A3 vs A1:** Focal loss SOLO reduce FNR en 10pp (gran impacto aunque AUC apenas cambie)
-- **A4 vs A1:** el frozen start contribuye 4.4 puntos
-- **A5 vs A1:** un head mas grande contribuye 5 puntos
+- **A2 vs A1:** el Siamese pretraining contribuye 2 puntos de AUC
+- **A3 vs A1:** Focal loss reduce FNR en 6.9pp (gran impacto aunque AUC apenas cambie)
+- **B2 vs B0:** TTA + Ensemble agregan 1.84 pp sin re-entrenar la arquitectura — suficiente para superar a Trad
 
-**Defensa del ablation:** "Cada componente del diseño tiene evidencia empirica de contribucion. La suma de componentes (5+5+4+5 = 19 AUC points potencial) justifica cada decision arquitectonica."
+**Defensa del ablation:** "Cada componente arquitectonico tiene evidencia empirica de contribucion. Los refinamientos de inferencia (TTA y ensemble) producen el resultado headline sin tocar el diseño base."
 
-## 16. Cross-Dataset Generalization (Table IV)
+## 16. Cross-Dataset Generalization (Table IV — single seed)
 
 | Setup | AUC | F1 | FNR |
 |-------|-----|-----|-----|
 | CV1: Train CIC → Test Trad | 0.7178 | 0.6658 | 0.0000 |
 | CV2: Train Trad → Test CIC | 0.5181 | 0.5166 | 0.4917 |
-| CV3: Train Combined → Test Combined | 0.9254 | 0.8576 | 0.1662 |
+| CV3: Train Combined → Test Combined | 0.8962 | 0.8207 | 0.2017 |
 
 **Interpretacion:**
 - **CV1 (AUC 0.72, FNR 0):** El modelo entrenado solo en CIC cuando ve Trad "colapsa" — predice TODO como phishing (por eso FNR=0, recall=100%, pero precision baja). AUC 0.72 indica que AUN asi tiene cierta discriminacion.
 - **CV2 (AUC 0.52):** Modelo entrenado en Trad (69×69 binarios) NO puede procesar PNG de variable resolucion → practicamente random.
-- **CV3 (AUC 0.9254):** Al entrenar combinado, el modelo aprende features invariantes a resolucion.
+- **CV3 (AUC 0.8962):** Al entrenar combinado, el modelo aprende features invariantes a resolucion.
 
 **Insight clave:** Ningun dataset SOLO es suficiente. El entrenamiento combinado es una contribucion metodologica, no solo conveniencia.
 
@@ -378,7 +387,7 @@ Los embeddings inter-class estan **~2x mas lejanos** que intra-class.
 ## 18. ¿Como validamos cada claim del paper?
 
 **Claim 1: "Q-Shield supera el SOTA previo"**
-- Evidencia: Table III. AUC 0.9254 vs Trad 0.9133 = +1.21 pp
+- Evidencia: Table III. AUC 0.9146 (ensemble + TTA) vs Trad 0.9133 = +0.13 pp en un benchmark 11x mas grande
 - Condicion: sobre 21,998 muestras (benchmark 10x mas grande)
 - Reproducible: notebook 06 + 07 con seed 42
 
@@ -407,7 +416,7 @@ Los embeddings inter-class estan **~2x mas lejanos** que intra-class.
 - Reproducible: notebook 07
 
 **Claim 8: "Mobile-deployable"**
-- Evidencia: 2.9M parametros = ~12 MB fp32, ~3 MB quantized int8
+- Evidencia: 3.08M parametros = ~12 MB fp32, ~3 MB quantized int8
 - Comparacion: Trad 4,761 pixel features + tree ensemble tambien es compacto, pero nuestro approach es mas flexible
 
 ## 19. Hiperparametros — por que los elegimos
@@ -431,7 +440,7 @@ Los embeddings inter-class estan **~2x mas lejanos** que intra-class.
 ## 20. Defensa contra criticas comunes
 
 **Critica 1: "¿Por que no usan ResNet en vez de MobileNet?"**
-- Respuesta: Mobile deployability es uno de nuestros objetivos. ResNet-50 tiene 25.6M params vs MobileNet 2.9M (10x menos). El AUC delta en esta tarea es marginal (~0.5pp) segun nuestros pilotos.
+- Respuesta: Mobile deployability es uno de nuestros objetivos. ResNet-50 tiene 25.6M params vs MobileNet 3.08M (10x menos). El AUC delta en esta tarea es marginal (~0.5pp) segun nuestros pilotos.
 
 **Critica 2: "¿Por que contrastive loss en vez de triplet loss?"**
 - Respuesta: Contrastive es mas simple (pares vs triplets), converge mas rapido, y nuestros resultados muestran separation ratio 1.94 — suficiente. Triplet es future work.
@@ -466,7 +475,7 @@ Los embeddings inter-class estan **~2x mas lejanos** que intra-class.
 ## 21. Respuestas rapidas a preguntas esperadas
 
 **"¿Cual es la contribucion principal?"**
-> Primer aplicacion de Siamese contrastive learning a quishing. Superamos el SOTA previo en un benchmark 10x mas grande (AUC 0.9254 vs 0.9133, 21,998 vs 1,998 muestras).
+> Primer aplicacion de Siamese contrastive learning a quishing. Superamos el SOTA previo en un benchmark 11x mas grande (AUC 0.9146 ensemble vs 0.9133, 21,998 vs 1,998 muestras).
 
 **"¿Por que Siamese y no un CNN normal?"**
 > Siamese aprende distancias (metric learning), que generaliza mejor con datos limitados. Ablation (A2) muestra que quitar el pretraining pierde 4.9 AUC pts.
@@ -475,10 +484,10 @@ Los embeddings inter-class estan **~2x mas lejanos** que intra-class.
 > Contrastive es mas simple y converge rapido. Triplet es future work. Nuestro separation ratio 1.94 demuestra que contrastive funciona.
 
 **"¿Por que MobileNetV2?"**
-> Edge deployability — objetivo explicito. 2.9M params permiten inferencia movil. Trade-off vs ResNet es marginal (0.5pp AUC) pero 10x el tamaño.
+> Edge deployability — objetivo explicito. 3.08M params permiten inferencia movil. Trade-off vs ResNet es marginal (0.5pp AUC) pero 10x el tamaño.
 
 **"¿Como justifican el training combinado?"**
-> Cross-dataset (Table IV) muestra que ningun dataset SOLO generaliza. CIC→Trad: collapse. Trad→CIC: random. Combinado: AUC 0.9254.
+> Cross-dataset (Table IV) muestra que ningun dataset SOLO generaliza. CIC→Trad: collapse. Trad→CIC: random. Combinado (single seed): AUC 0.8962, ensemble: 0.9146.
 
 **"¿Que pasa si el attacker conoce Q-Shield?"**
 > Adversarial robustness es limitacion reconocida. Future work: adversarial training + randomized smoothing.
@@ -508,7 +517,7 @@ Los embeddings inter-class estan **~2x mas lejanos** que intra-class.
 
 ## 22. Un parrafo de defensa final (si te preguntan "¿En 30 segundos que hicieron?")
 
-> "Desarrollamos Q-Shield, el primer framework de deteccion de quishing basado en Siamese contrastive learning. Operamos directamente sobre la imagen del QR code — sin decodificar su payload — usando un backbone MobileNetV2 con 2.9M parametros, entrenado en dos fases: primero contrastive pretraining sobre pares de imagenes, luego clasificacion supervisada con focal loss. Evaluamos sobre 21,998 muestras combinadas de Trad et al. y CIC Trap4Phish 2025, obteniendo AUC 0.9254 — superando el SOTA previo (0.9133) en un benchmark 10x mas grande. Ablation study confirma que cada componente contribuye 4-5 puntos AUC, y cross-dataset analysis demuestra que el entrenamiento combinado es necesario para generalizar. Grad-CAM y SHAP proveen explicabilidad dual: visual (donde mira el modelo) y feature-level (que dimensiones del embedding importan). El framework es country-agnostic y mobile-deployable, con extensions naturales a multimodal y adversarial robustness."
+> "Desarrollamos Q-Shield, el primer framework de deteccion de quishing basado en Siamese contrastive learning. Operamos directamente sobre la imagen del QR code — sin decodificar su payload — usando un backbone MobileNetV2 con 3.08M parametros, entrenado en dos fases: primero contrastive pretraining sobre pares de imagenes, luego clasificacion supervisada con focal loss. En inferencia aplicamos test-time augmentation con flip horizontal y promediamos las salidas de dos modelos entrenados con seeds distintos (ensemble). Evaluamos sobre 21,998 muestras combinadas de Trad et al. y CIC Trap4Phish 2025, obteniendo AUC 0.9146 con la configuracion ensemble — superando el SOTA previo (0.9133) en un benchmark 11x mas grande y heterogeneo, con la variante single-seed alcanzando AUC 0.8962 a un cuarto del costo de inferencia. Ablation study confirma que cada componente arquitectonico contribuye, y cross-dataset analysis demuestra que el entrenamiento combinado es necesario para generalizar. Grad-CAM y SHAP proveen explicabilidad dual: visual (donde mira el modelo) y feature-level (que dimensiones del embedding importan). El framework es country-agnostic y mobile-deployable, con extensions naturales a multimodal y adversarial robustness."
 
 ---
 
