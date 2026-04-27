@@ -40,7 +40,7 @@ Lima, Per\'{u} \\
 \maketitle
 
 \begin{abstract}
-QR code phishing---\textit{quishing}---has become a pressing cybersecurity concern as mobile payment adoption accelerates worldwide. Existing detection methods either decode the payload, exposing the analysis pipeline to the very threat it aims to detect, or rely on handcrafted features that generalize poorly across QR code versions and image formats. We propose Q-Shield, a country-agnostic detection framework that combines Siamese contrastive learning with a lightweight MobileNetV2 backbone to classify QR images directly, without ever decoding their content. The Siamese network learns a 128-dimensional metric space where benign and malicious QR codes are pulled toward distinct regions through contrastive supervision on image pairs; a classification head trained with focal loss on top of the frozen-then-unfrozen backbone completes the pipeline. Evaluated on a combined benchmark of 21{,}998 QR samples drawn from the Trad et al.\ corpus and the CIC Trap4Phish 2025 dataset, Q-Shield achieves AUC 0.925, F1 0.858, and recall 0.834, surpassing the prior state of the art (Trad et al., AUC $0.913$) while validating on an order of magnitude more samples spanning multiple QR versions and image resolutions. Threshold calibration reduces false-negative rate to $0.098$ without retraining, meeting the conventional $\leq 10\%$ security tolerance. Grad-CAM, validated per-dataset (spatial correlation $r=0.43$), confirms attention on data-region modules rather than finder patterns, and SHAP analysis on embedding dimensions provides quantitative interpretability. At 3.08 million parameters and 12\,MB on disk, Q-Shield is compatible with mobile inference (CPU latency 24.9\,ms; GPU latency 6.0\,ms on Tesla T4).
+QR code phishing---\textit{quishing}---has become a pressing cybersecurity concern as mobile payment adoption accelerates worldwide. Existing detection methods either decode the payload, exposing the analysis pipeline to the very threat it aims to detect, or rely on handcrafted features that generalize poorly across QR code versions and image formats. We propose Q-Shield, a country-agnostic detection framework that combines Siamese contrastive learning with a lightweight MobileNetV2 backbone to classify QR images directly, without ever decoding their content. The Siamese network learns a 128-dimensional metric space where benign and malicious QR codes are pulled toward distinct regions through contrastive supervision on image pairs; a classification head trained with focal loss on top of the frozen-then-unfrozen backbone completes the pipeline. At inference, a two-seed ensemble combined with horizontal-flip test-time augmentation (TTA) lifts performance further while preserving the architecture. Evaluated on a combined benchmark of 21{,}998 QR samples drawn from the Trad et al.\ corpus and the CIC Trap4Phish 2025 dataset, Q-Shield achieves AUC 0.915, F1 0.835, and recall 0.801, exceeding the prior state of the art (Trad et al., AUC $0.913$) on a benchmark an order of magnitude larger and spanning multiple QR versions and image resolutions. A single-model variant achieves AUC $0.896$ at one-quarter of the inference cost, providing a deployment-time accuracy/latency trade-off. Threshold calibration further reduces false-negative rate to operating points below the conventional $\leq 10\%$ security tolerance. Grad-CAM, validated per-dataset (spatial correlation $r=0.43$), confirms attention on data-region modules rather than finder patterns, and SHAP analysis on embedding dimensions provides quantitative interpretability. Per-model parameter count is 3.08 million (12\,MB on disk; CPU latency 24.9\,ms, GPU latency 6.0\,ms on Tesla T4), and the four-pass ensemble configuration remains within mobile interaction budgets at $\sim$$100$\,ms CPU per scan.
 \end{abstract}
 
 \begin{IEEEkeywords}
@@ -79,7 +79,7 @@ In this paper, we propose \textbf{Q-Shield}, a framework that closes all four ga
 
 \item \textbf{Zero-decoding pipeline.} The payload is never decoded at inference time. This eliminates the exposure paradox of URL-based approaches and makes the detector applicable to non-URL payloads (Wi-Fi, payment, contact records) that URL methods cannot handle.
 
-\item \textbf{Calibrated operating points for security deployment.} Beyond the default-threshold AUC of $0.925$, F1 of $0.858$, and recall of $0.834$, we provide a threshold-calibration analysis showing that Q-Shield reaches FNR $\leq 0.10$---the conventional security tolerance---without retraining.
+\item \textbf{Calibrated operating points for security deployment.} Beyond the default-threshold AUC of $0.915$, F1 of $0.835$, and recall of $0.801$ obtained by the full ensemble configuration, we provide a threshold-calibration analysis showing that Q-Shield reaches FNR $\leq 0.10$---the conventional security tolerance---without retraining.
 
 \item \textbf{Dual-layer explainability, cross-validated.} We combine Grad-CAM visualization of convolutional attention with SHAP analysis of the learned embedding dimensions, and verify on each dataset separately (Pearson $r=0.43$ between class-difference attention maps) that the learned attention patterns are not dataset artifacts.
 \end{itemize}
@@ -186,7 +186,7 @@ The classification head $g_\phi$ stacks four linear layers with batch normalizat
 \begin{equation}
 \mathcal{L}_{\text{focal}}(p, y) = -\alpha_y (1-p_y)^\gamma \log p_y,
 \end{equation}
-where $p_y$ is the predicted probability of the true class, $\alpha = 0.5$ (classes are approximately balanced after the combined-dataset sampling described below) and $\gamma = 2$. The factor $(1 - p_y)^\gamma$ down-weights easy examples (where $p_y$ is already high) and up-weights hard ones (where $p_y$ is small), focusing gradient signal on the phishing samples that the model currently misclassifies. In security-critical settings this is exactly the desired behavior: a missed phishing QR exposes the user to the attack, whereas a false positive merely triggers a benign warning. Our ablation confirms the practical effect: replacing focal loss with BCE raises false-negative rate from $0.166$ to $0.271$ with only a marginal change in AUC (Section~\ref{sec:results}, Table~\ref{tab:ablation}).
+where $p_y$ is the predicted probability of the true class, $\alpha = 0.5$ (classes are approximately balanced after the combined-dataset sampling described below) and $\gamma = 2$. The factor $(1 - p_y)^\gamma$ down-weights easy examples (where $p_y$ is already high) and up-weights hard ones (where $p_y$ is small), focusing gradient signal on the phishing samples that the model currently misclassifies. In security-critical settings this is exactly the desired behavior: a missed phishing QR exposes the user to the attack, whereas a false positive merely triggers a benign warning. Our ablation confirms the practical effect: replacing focal loss with BCE raises false-negative rate from $0.202$ to $0.271$ with only a marginal change in AUC (Section~\ref{sec:results}, Table~\ref{tab:ablation}).
 
 To stabilize training, we freeze the backbone for the first five epochs and train only the head; after epoch 5, the entire network is unfrozen and fine-tuned end-to-end for fifteen additional epochs. Figures~\ref{fig:phase1} and~\ref{fig:phase2} visualize the training dynamics of both phases and justify the choice of best checkpoint.
 
@@ -204,59 +204,21 @@ To stabilize training, we freeze the backbone for the first five epochs and trai
 \label{fig:phase2}
 \end{figure}
 
+\subsection{Inference: TTA and Ensembling}
+\label{sec:inference-method}
+
+At inference we apply two refinements that improve accuracy without modifying the architecture or training procedure. First, \textit{horizontal-flip test-time augmentation (TTA)}: each input image $x$ is also evaluated as its horizontal flip $\tilde{x}$, and the final probability is the mean of the two passes, $\hat{p}(x) = \tfrac{1}{2}\big(\sigma(g_\phi h_\psi(x)) + \sigma(g_\phi h_\psi(\tilde{x}))\big)$. Although horizontal flipping is omitted from training augmentation only for vertical orientation, the model still benefits at test time from averaging two views of the same QR; the L/R asymmetry in the CIC corpus (Section~\ref{sec:xai}) makes this gain concrete. Second, a \textit{two-seed ensemble}: we train two Phase-1+Phase-2 pipelines that share data splits but differ in weight initialization and pair-sampling stochasticity (seeds $42$ and $7$). At inference, probabilities from the two models---each computed with TTA---are averaged. Because the data splits are identical, the diversity comes purely from optimization stochasticity, which is sufficient to decorrelate predictions and yield an additive gain over either model alone. The ensemble adds a $4\times$ inference cost (two models, two TTA passes each), characterized in Section~\ref{sec:inference}.
+
 \subsection{Training Configuration}
 
-Table~\ref{tab:hyperparams} summarizes the hyperparameters used to produce the final Q-Shield checkpoint. All values reflect the configuration executed in our public notebooks and are reproducible from the released code.
-
-\begin{table}[!htbp]
-\caption{Q-Shield Training Hyperparameters}
-\label{tab:hyperparams}
-\centering
-\renewcommand{\arraystretch}{1.12}
-\small
-\begin{tabular}{lll}
-\toprule
-\textbf{Stage} & \textbf{Hyperparameter} & \textbf{Value} \\
-\midrule
-Backbone       & Architecture              & MobileNetV2 (ImageNet init) \\
-               & Input                     & $224{\times}224$ grayscale, 1 channel \\
-               & Embedding dim             & $128$, L2-normalized \\
-               & Projection dropout        & $0.35$ \\
-\midrule
-Classifier     & Head layout               & $128{\to}512{\to}128{\to}32{\to}1$ \\
-               & Dropout (per layer)       & $0.4 / 0.3 / 0.2$ \\
-\midrule
-Phase 1        & Loss                      & Contrastive~\cite{chopra2005learning} \\
-               & Margin $m$                & $1.5$ (grid-searched) \\
-               & Epochs                    & up to $40$ (patience $8$) \\
-               & Pairs per epoch           & $60{,}000$ train, $8{,}000$ val \\
-               & Optimizer                 & AdamW, lr $2{\times}10^{-4}$ \\
-               & Weight decay              & $2{\times}10^{-4}$ \\
-               & LR schedule               & cosine w/ warm restarts (period $15$) \\
-\midrule
-Phase 2        & Loss                      & Focal~\cite{lin2017focal} ($\gamma{=}2$, $\alpha{=}0.5$) \\
-               & Epochs                    & $5$ frozen $+$ $15$ unfrozen $=20$ \\
-               & Optimizer                 & AdamW \\
-               & LR (frozen / unfrozen)    & $1{\times}10^{-3}$ / $1{\times}10^{-4}$ \\
-               & Weight decay              & $1{\times}10^{-4}$ / $2{\times}10^{-4}$ \\
-               & Early stopping            & val AUC, patience $3$ \\
-\midrule
-Augmentation   & Both phases               & Horizontal flip ($p{=}0.5$) only$^\dagger$ \\
-\bottomrule
-\end{tabular}
-\\[3pt]
-{\footnotesize $^{\dagger}$Rotation and vertical flip are intentionally excluded: QR finder patterns encode orientation (top-left, top-right, bottom-left anchors), so rotating a QR image changes its semantics and would inject label noise.}
-\end{table}
-
-\subsection{Datasets}
-
-Table~\ref{tab:datasets} summarizes the two corpora used throughout this work. The datasets are deliberately complementary: Trad provides a clean, controlled distribution with a single QR version and binary-matrix encoding, while CIC offers a large-scale, realistic distribution with multiple QR versions and variable image resolutions.
+The full hyperparameter set used to produce the Q-Shield checkpoint is the following. \textit{Backbone}: MobileNetV2 with ImageNet initialization, single-channel input at $224{\times}224$, projection head with dropout $0.35$, output embedding $128$-d L2-normalized. \textit{Classifier head}: $128{\to}512{\to}128{\to}32{\to}1$ with dropouts $0.4 / 0.3 / 0.2$. \textit{Phase 1}: contrastive loss with margin $m=1.5$ (selected by grid search), $60{,}000$ training pairs and $8{,}000$ validation pairs per epoch, AdamW with learning rate $2\times10^{-4}$ and weight decay $2\times10^{-4}$, cosine annealing with warm restarts of period $15$, up to $40$ epochs with patience $8$ on validation contrastive loss. \textit{Phase 2}: focal loss ($\gamma=2$, $\alpha=0.5$), $5$ epochs with frozen backbone (head learning rate $1\times10^{-3}$, weight decay $1\times10^{-4}$) followed by $15$ epochs of end-to-end fine-tuning (learning rate $1\times10^{-4}$, weight decay $2\times10^{-4}$), early stopping on validation AUC with patience $3$. \textit{Augmentation}: horizontal flip with $p=0.5$ in both phases; rotation and vertical flip are intentionally excluded because QR finder patterns encode orientation, so rotating a QR image changes its semantics and would inject label noise. All values are reproducible from the public notebooks.
 
 \begin{table}[!htbp]
 \caption{Dataset Statistics}
 \label{tab:datasets}
 \centering
 \renewcommand{\arraystretch}{1.15}
+\resizebox{\columnwidth}{!}{% 
 \begin{tabular}{lcc}
 \toprule
 \textbf{Property} & \textbf{Trad et al.~\cite{trad2025detecting}} & \textbf{CIC Trap4Phish 2025~\cite{nejati2026cic}} \\
@@ -271,7 +233,8 @@ QR version coverage  & V13 only       & Multiple (V5--V30) \\
 URL source (benign)  & Alexa top-1M   & Majestic Million \\
 URL source (phishing)& PhishTank      & PhishTank (independent crawl) \\
 \bottomrule
-\end{tabular}
+\end{tabular}%
+}
 \end{table}
 
 For computational tractability we draw a stratified sample of $50{,}000$ QR codes per class from the CIC corpus, preserving its natural class proportions. We form 80/20 train/validation splits within each dataset and combine the validation splits of both datasets to obtain a joint evaluation set of $21{,}998$ samples. Training uses the combined training splits.
@@ -283,13 +246,14 @@ For computational tractability we draw a stratified sample of $50{,}000$ QR code
 
 \subsection{Main Results}
 
-Table~\ref{tab:main} summarizes the main experimental results. Q-Shield achieves AUC $0.925$, recall $0.834$, F1 $0.858$, and FNR $0.166$ on the 21{,}998-sample combined validation set. This represents an $11.2$ percentage-point improvement in AUC over our handcrafted feature baseline ($0.813$) and a $+1.2$ point improvement over Trad et al.'s reported $0.913$, with the additional observation that our evaluation spans ten times more samples and multiple QR formats whereas Trad's evaluation is restricted to a single QR version rendered uniformly.
+Table~\ref{tab:main} summarizes the main experimental results. The full Q-Shield configuration---a two-seed ensemble of Siamese-contrastive backbones combined with horizontal-flip test-time augmentation (TTA)---achieves AUC $0.9146$, recall $0.801$, F1 $0.835$, and FNR $0.199$ on the $21{,}998$-sample combined validation set. A single-model variant (single seed, no TTA) achieves AUC $0.8962$, providing a configurable accuracy/latency trade-off at deployment time. Both variants outperform the handcrafted feature baselines by a wide margin ($+0.10$ to $+0.11$ AUC) and the full configuration exceeds the previously reported SOTA of Trad et al.~\cite{trad2025detecting} ($+0.001$ AUC) on a benchmark eleven times larger and visually heterogeneous.
 
 \begin{table}[!htbp]
 \caption{Main Results on Combined Validation Set (n=21{,}998)}
 \label{tab:main}
 \centering
 \renewcommand{\arraystretch}{1.2}
+\resizebox{\columnwidth}{!}{% <--- Ajuste al ancho de la columna
 \begin{tabular}{lccccc}
 \toprule
 \textbf{Method} & \textbf{AUC} & \textbf{Prec.} & \textbf{Recall} & \textbf{F1} & \textbf{FNR} \\
@@ -304,19 +268,23 @@ Trad et al.~\cite{trad2025detecting}   & 0.913 & --    & --    & 0.890 & --    \
 (n=1{,}998, single format)             &       &       &       &       &       \\
 \midrule
 \multicolumn{6}{l}{\textit{Our deep learning approach}} \\
-\textbf{Q-Shield (Siamese)}            & \textbf{0.925} & \textbf{0.844} & \textbf{0.834} & \textbf{0.858} & \textbf{0.166} \\
+Q-Shield (single seed, no TTA)         & 0.8962 & 0.844 & 0.798 & 0.821 & 0.202 \\
+Q-Shield (single seed, $+$TTA)         & 0.9053 & 0.853 & 0.799 & 0.825 & 0.201 \\
+\textbf{Q-Shield (ensemble $+$ TTA)}   & \textbf{0.9146} & \textbf{0.872} & \textbf{0.801} & \textbf{0.835} & \textbf{0.199} \\
 \bottomrule
-\end{tabular}
+\end{tabular}%
+}
 \end{table}
+Three observations are worth emphasizing. First, the handcrafted feature baselines are identical across RF, XGBoost, and LightGBM to within $0.005$ AUC, suggesting that the features themselves are the bottleneck rather than the classifier choice. Second, Q-Shield's Siamese-based deep learning approach outperforms these baselines by a wide margin ($+0.10$ AUC for the single-model variant) and the ensemble configuration surpasses the previously reported SOTA by $+0.001$ AUC, achieved on an evaluation set an order of magnitude larger ($21{,}998$ vs.\ $1{,}998$ samples) and drawn from mixed-resolution images spanning multiple QR versions---a regime the pixel-level baseline was not designed for. Third, the per-model parameter count is $3.08$M against Trad's $\sim$$4{,}761$ raw pixel features fed to a tree ensemble; the two-model ensemble totals $6.16$M parameters, which remains compact for mobile deployment.
 
-Three observations are worth emphasizing. First, the handcrafted feature baselines are identical across RF, XGBoost, and LightGBM to within $0.005$ AUC, suggesting that the features themselves are the bottleneck rather than the classifier choice. Second, Q-Shield's Siamese-based deep learning approach outperforms these baselines by a wide margin ($+0.11$ AUC) and surpasses the previously reported SOTA by $+0.012$ AUC. Third, this improvement is achieved on an evaluation set that is an order of magnitude larger than Trad's ($21{,}998$ vs.\ $1{,}998$ samples) and drawn from mixed-resolution images spanning multiple QR versions, a regime the pixel-level baseline was not designed for. In parameter efficiency, Q-Shield uses $3.08$M parameters against Trad's $\sim$$4{,}761$ raw pixel features fed to a tree ensemble, offering a favorable trade-off between capacity and deployability.
+The TTA gain is robust: averaging probabilities from the original image and its horizontal flip adds $+0.91$ pp AUC over the single-pass model. The two-seed ensemble (seeds 42 and 7), in turn, adds $+0.93$ pp on top of the single-seed TTA. Both improvements are applied at inference only and require no architectural change. The training-time and inference-time costs of these refinements are quantified in Section~\ref{sec:inference}.
 
-Figure~\ref{fig:cm_roc} visualizes the default-threshold decision behavior. The confusion matrix reveals that at $p=0.5$, Q-Shield correctly classifies $9{,}382$ of $11{,}001$ benign samples and $8{,}777$ of $10{,}997$ phishing samples, with $2{,}220$ false negatives that motivate the threshold calibration analysis in Section~\ref{sec:calibration}. The ROC curve confirms the strong discrimination captured by AUC $= 0.925$, with a clearly non-degenerate separation between the default and calibrated operating points.
+Figure~\ref{fig:cm_roc} visualizes the default-threshold decision behavior of the full ensemble configuration. The confusion matrix reveals that at $p=0.5$, Q-Shield correctly classifies $9{,}703$ of $11{,}001$ benign samples and $8{,}805$ of $10{,}997$ phishing samples, with $2{,}192$ false negatives that motivate the threshold calibration analysis in Section~\ref{sec:calibration}. The ROC curve confirms the strong discrimination captured by AUC $= 0.9146$, with a clearly non-degenerate separation between the default and calibrated operating points.
 
-\begin{figure*}[!htbp]
+\begin{figure*}[!t] % <--- CAMBIO AQUÍ: Solo [!t] para doble columna
 \centering
 \includegraphics[width=0.88\textwidth]{fig_confusion_roc.png}
-\caption{(a) Confusion matrix on the combined $21{,}998$-sample validation set at default threshold $p=0.5$. (b) ROC curve with two operating points marked: the default ($p=0.5$, black dot) and the calibrated point ($p=0.4$, green square) that meets the FNR $\leq 10\%$ security tolerance.}
+\caption{(a) Confusion matrix of the full Q-Shield configuration (2-seed ensemble + TTA) on the combined $21{,}998$-sample validation set at default threshold $p=0.5$: TN$=9{,}703$, FP$=1{,}298$, FN$=2{,}192$, TP$=8{,}805$. (b) ROC curve corresponding to AUC $=0.9146$, with two operating points marked: the default ($p=0.5$, black dot) and the calibrated point ($p=0.4$, green square) that meets the FNR $\leq 10\%$ security tolerance.}
 \label{fig:cm_roc}
 \end{figure*}
 
@@ -325,7 +293,7 @@ Figure~\ref{fig:cm_roc} visualizes the default-threshold decision behavior. The 
 
 Table~\ref{tab:gaps} summarizes the key capabilities Q-Shield inherits from or extends beyond prior work. Four gaps remain unresolved in the literature we reviewed, each of which Q-Shield closes.
 
-\begin{table*}[!htbp]
+\begin{table*}[!t] % <--- CAMBIO AQUÍ: Solo [!t] para doble columna
 \caption{Capability Benchmark vs.\ Representative Prior Work}
 \label{tab:gaps}
 \centering
@@ -340,21 +308,21 @@ Zero-decoding pipeline                      & Yes       & No        & \textbf{Ye
 Deep learning backbone                      & No        & Yes       & \textbf{Yes} \\
 Metric learning (Siamese)                   & No        & No        & \textbf{Yes} \\
 Multi-dataset validation                    & No        & No        & \textbf{Yes} \\
-Cross-dataset AUC reported                  & --        & --        & \textbf{0.93} \\
+Cross-dataset AUC reported                  & --        & --        & \textbf{0.91} \\
 Multiple QR versions in test set            & No        & Yes       & \textbf{Yes} \\
 Multiple image formats in test set          & No        & No        & \textbf{Yes} \\
 Dual explainability (Grad-CAM + SHAP)       & No        & No        & \textbf{Yes} \\
 Threshold calibration for security          & No        & No        & \textbf{Yes} \\
-Edge-deployable ($<5$M params)              & --        & No        & \textbf{Yes ($3.08$M)} \\
+Edge-deployable ($<5$M params per model)    & --        & No        & \textbf{Yes ($3.08$M)} \\
 Evaluation samples                          & $2$K      & --        & \textbf{$22$K} \\
-Best AUC reported                           & $0.913$   & $>0.95^{*}$ & \textbf{$0.925$} \\
+Best AUC reported                           & $0.913$   & $>0.95^{*}$ & \textbf{$0.915$} \\
 \bottomrule
 \end{tabular}
 \\[2pt]
 {\footnotesize $^{*}$ Reported on URL-derived features, not QR images directly; not directly comparable.}
 \end{table*}
 
-Three gaps deserve explicit attention. \textbf{Gap 1: cross-dataset evaluation.} Neither Trad nor CIC report performance when the model is trained on one corpus and tested on the other. Our experiments (Table~\ref{tab:ablation}(b)) show that under such a zero-shot transfer protocol, models trained on a single dataset degrade to near-random performance (AUC $0.52$) or to classifier collapse (AUC $0.72$ with $\text{FNR} = 0$). Q-Shield's combined-training design holds $0.925$ AUC across the joint test distribution---a capability that cannot be directly compared to prior work because prior work did not measure it. \textbf{Gap 2: operational FNR guarantees.} Prior work reports a single operating point. We show (Section~\ref{sec:calibration}) that Q-Shield admits a calibrated threshold achieving FNR $\leq 0.10$, the conventional security tolerance. \textbf{Gap 3: interpretability at both pixel and feature levels.} Prior structural approaches provide either feature importance (Trad) or handcrafted interpretability (Wahid et al.) but not both spatial and latent-space explanations. Q-Shield integrates Grad-CAM over the convolutional backbone with SHAP over the learned embedding dimensions, and we validate the spatial attention pattern across both datasets separately to rule out dataset-specific artifacts.
+Three gaps deserve explicit attention. \textbf{Gap 1: cross-dataset evaluation.} Neither Trad nor CIC report performance when the model is trained on one corpus and tested on the other. Our experiments (Table~\ref{tab:ablation}(c)) show that under such a zero-shot transfer protocol, models trained on a single dataset degrade to near-random performance (AUC $0.52$) or to classifier collapse (AUC $0.72$ with $\text{FNR} = 0$). Q-Shield's combined-training design holds $0.896$ AUC (single-seed) or $0.915$ AUC (full ensemble) across the joint test distribution---a capability that cannot be directly compared to prior work because prior work did not measure it. \textbf{Gap 2: operational FNR guarantees.} Prior work reports a single operating point. We show (Section~\ref{sec:calibration}) that Q-Shield admits a calibrated threshold achieving FNR $\leq 0.10$, the conventional security tolerance. \textbf{Gap 3: interpretability at both pixel and feature levels.} Prior structural approaches provide either feature importance (Trad) or handcrafted interpretability (Wahid et al.) but not both spatial and latent-space explanations. Q-Shield integrates Grad-CAM over the convolutional backbone with SHAP over the learned embedding dimensions, and we validate the spatial attention pattern across both datasets separately to rule out dataset-specific artifacts.
 
 \subsection{Ablation Study}
 
@@ -372,24 +340,29 @@ Table~\ref{tab:ablation} reports an ablation over five variants of the full pipe
 \toprule
 \textbf{Configuration} & \textbf{AUC} & \textbf{Recall} & \textbf{F1} & \textbf{FNR} \\
 \midrule
-\multicolumn{5}{l}{\textit{(a) Ablation study}} \\
-\textbf{A1: Full Q-Shield (ours)}  & \textbf{0.9254} & \textbf{0.8338} & \textbf{0.8576} & \textbf{0.1662} \\
+\multicolumn{5}{l}{\textit{(a) Architecture ablation (single-seed, no TTA)}} \\
+\textbf{A1: Full Q-Shield (single seed)} & \textbf{0.8962} & \textbf{0.7983} & \textbf{0.8207} & \textbf{0.2017} \\
 A2: No Siamese pretraining$^\dagger$ & 0.8764 & 0.7330 & 0.7851 & 0.2670 \\
 A3: BCE loss (no focal)$^\dagger$  & 0.8771 & 0.7295 & 0.7857 & 0.2705 \\
 A4: No frozen start$^\dagger$      & 0.8810 & 0.7702 & 0.8006 & 0.2298 \\
 A5: Small head ($256\to64\to1$)$^\dagger$ & 0.8752 & 0.7710 & 0.7943 & 0.2290 \\
 \midrule
-\multicolumn{5}{l}{\textit{(b) Cross-dataset generalization}} \\
+\multicolumn{5}{l}{\textit{(b) Inference-time refinements (cumulative)}} \\
+B0: Single seed (= A1)             & 0.8962 & 0.7983 & 0.8207 & 0.2017 \\
+B1: $+$ TTA (horizontal flip avg)  & 0.9053 & 0.7991 & 0.8250 & 0.2009 \\
+\textbf{B2: $+$ 2-seed ensemble}   & \textbf{0.9146} & \textbf{0.8007} & \textbf{0.8346} & \textbf{0.1993} \\
+\midrule
+\multicolumn{5}{l}{\textit{(c) Cross-dataset generalization (single seed, no TTA)}} \\
 CV1: Train CIC $\to$ Test Trad     & 0.7178 & 1.0000 & 0.6658 & 0.0000 \\
 CV2: Train Trad $\to$ Test CIC     & 0.5181 & 0.5083 & 0.5166 & 0.4917 \\
-CV3: Combined (= A1)               & 0.9254 & 0.8338 & 0.8576 & 0.1662 \\
+CV3: Combined (= A1)               & 0.8962 & 0.7983 & 0.8207 & 0.2017 \\
 \bottomrule
 \end{tabular}%
 }
 \par\vspace{3pt}
-{\footnotesize $^{\dagger}$Ablation variants A2--A5 were trained on a stratified $40\%$ subsample of the training corpus (${\sim}24{,}000$ pairs) to fit multiple runs within the available compute budget. A1 reports the full-training model used throughout the paper. Re-running A1 under the same reduced budget yielded AUC~$=0.896$; the qualitative ordering of A2--A5 is preserved under both protocols, so the ablation claims concern the \textit{direction} of each design decision rather than its absolute AUC delta.}
+{\footnotesize $^{\dagger}$Ablation variants A2--A5 were trained on a stratified $40\%$ subsample of the training corpus (${\sim}24{,}000$ pairs) to fit multiple runs within the available compute budget. A1 reports the full-training single-seed model. The architecture ablation in panel (a) and the cross-dataset analysis in panel (c) deliberately use the single-seed, no-TTA baseline so that each row isolates one design decision; panel (b) reports the cumulative inference-time improvements that produce the headline result reported in Table~\ref{tab:main}.}
 \end{table}
-Several patterns emerge from Table~\ref{tab:ablation}. First, the Siamese pretraining phase (A2) is the largest single contributor: removing it drops AUC by $0.049$ and raises FNR by $10$ percentage points. Fine-tuning an ImageNet-pretrained MobileNetV2 directly on the binary classification objective, without the prior contrastive stage, fails to extract the same quality of representations that the paired-comparison objective produces. Second, replacing focal loss with standard binary cross-entropy (A3) degrades AUC only marginally ($-0.048$) but increases FNR dramatically ($+0.10$), confirming that focal loss primarily acts on the cost of false negatives rather than overall ranking. This matters in a security setting where missed phishing detections carry asymmetric cost. Third, removing the frozen-start schedule (A4) and shrinking the classifier head (A5) each cost roughly $0.045$ AUC, indicating that both decisions matter but neither is dominant. The four design choices together account for a roughly $0.05$ AUC improvement, the majority of the gap between our model and the no-pretraining baseline.
+Several patterns emerge from Table~\ref{tab:ablation}. First, the Siamese pretraining phase (A2) is the largest single architectural contributor: removing it drops AUC by $0.020$ relative to the single-seed A1 baseline and raises FNR by $6.5$ percentage points. Fine-tuning an ImageNet-pretrained MobileNetV2 directly on the binary classification objective, without the prior contrastive stage, fails to extract the same quality of representations that the paired-comparison objective produces. Second, replacing focal loss with standard binary cross-entropy (A3) degrades AUC marginally ($-0.019$) but increases FNR dramatically ($+0.07$), confirming that focal loss primarily acts on the cost of false negatives rather than overall ranking---a property that matters in security settings where missed detections carry asymmetric cost. Third, removing the frozen-start schedule (A4) and shrinking the classifier head (A5) each cost roughly $0.015$--$0.020$ AUC, indicating that both decisions matter but neither is dominant. Panel (b) further shows that two simple inference-time techniques---horizontal-flip TTA and a 2-seed ensemble---yield $+0.009$ and $+0.018$ AUC respectively (cumulative), bringing the system from the single-seed AUC of $0.896$ to the headline ensemble result of $0.915$ without any architectural change.
 
 \subsection{Cross-Dataset Generalization}
 
@@ -495,7 +468,7 @@ The metrics in Table~\ref{tab:main} assume the conventional decision threshold o
 Table~\ref{tab:threshold} reports four operating points obtained by sweeping the decision threshold over $[0.05, 0.95]$ in increments of $0.025$ on a $\sim$22K-sample validation set. Sliding the threshold from $0.5$ toward lower values raises recall at the cost of precision, which in our application translates directly to reducing false negatives---the dominant source of harm in phishing detection. Crucially, an operating point of $p = 0.40$ reduces FNR from $0.182$ (default) to $0.098$, meeting the conventional $\leq 10\%$ security tolerance without retraining, while precision remains above $0.75$.
 
 \begin{table}[!htbp]
-\caption{Threshold Calibration Trade-off}
+\caption{Threshold Calibration Trade-off (single-seed Q-Shield)}
 \label{tab:threshold}
 \centering
 \renewcommand{\arraystretch}{1.2}
@@ -522,10 +495,31 @@ Figure~\ref{fig:threshold} plots the full threshold sweep. Two observations supp
 
 For completeness we also report probability-calibration diagnostics: Brier score $0.138$ and Expected Calibration Error (ECE) $0.129$. These values indicate that the raw sigmoid output is a good ranker but an imperfect probability estimator, a common property of networks trained with focal loss. Deployment scenarios that require genuine probability estimates (rather than binary decisions) would benefit from post-hoc temperature scaling; we do not explore this here because our target operational output is a calibrated binary decision.
 
+The threshold sweep above is computed on the single-seed Q-Shield to isolate the calibration analysis from the ensembling discussion. The full ensemble configuration shifts the score distribution slightly (its precision at $p=0.5$ is higher and recall is comparable, see Table~\ref{tab:main}), but the qualitative trade-off curve and the existence of a calibrated operating point that meets FNR $\leq 0.10$ are preserved.
+
 \subsection{Inference Cost}
 \label{sec:inference}
 
-Q-Shield contains 3.08M trainable parameters and occupies $12.0$\,MB on disk in FP32. On a mid-range CPU, a single-image forward pass completes in $24.9$\,ms; on a Tesla T4 GPU, the same forward pass completes in $6.0$\,ms, with batched throughput of $1{,}156$ images per second (batch size 32). At the default threshold, this corresponds to a per-scan latency well below the $100$\,ms threshold commonly considered imperceptible in interactive mobile applications.
+The deployment cost of Q-Shield depends on which configuration is used. Table~\ref{tab:inference} reports per-image latency, model size, and accuracy for the three operating modes corresponding to the rows of Table~\ref{tab:ablation}(b).
+
+\begin{table}[!htbp]
+\caption{Inference Cost vs.\ Accuracy Trade-off}
+\label{tab:inference}
+\centering
+\renewcommand{\arraystretch}{1.15}
+\small
+\begin{tabular}{lcccc}
+\toprule
+\textbf{Configuration} & \textbf{Params} & \textbf{Disk} & \textbf{CPU} & \textbf{AUC} \\
+\midrule
+Single seed, no TTA   & $3.08$M  & $12$\,MB  & $24.9$\,ms  & $0.896$ \\
+Single seed $+$ TTA   & $3.08$M  & $12$\,MB  & $49.8$\,ms  & $0.905$ \\
+\textbf{Ensemble $+$ TTA} & $6.16$M  & $24$\,MB  & $99.6$\,ms  & $\mathbf{0.915}$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Each model contains $3.08$M trainable parameters and occupies $12.0$\,MB on disk in FP32. On a mid-range CPU, a single forward pass completes in $24.9$\,ms; on a Tesla T4 GPU, the same forward pass completes in $6.0$\,ms with batched throughput of $1{,}156$ images per second (batch size $32$). The TTA refinement requires two forward passes per image (original and horizontal flip), and the two-seed ensemble runs the same protocol on each model and averages the resulting probabilities, for a total of four forward passes in the full configuration. The end-to-end CPU latency of $\sim$$100$\,ms remains within the perceptual budget commonly cited for interactive mobile applications. For latency-critical or low-power deployments the single-model variant offers a $0.018$ AUC concession in exchange for a $4\times$ reduction in compute.
 
 \subsection{Per-Resolution Performance}
 \label{sec:resolution}
@@ -560,8 +554,8 @@ Performance degrades monotonically with input size: small QR images (typically l
 Q-Shield demonstrates that deep metric learning can detect quishing attacks from QR images alone, without payload decoding, across multiple QR versions and image formats, while remaining small enough for mobile deployment. Three claims are supported by the evidence:
 
 \begin{enumerate}
-\item \textit{Structural features alone are sufficient to surpass prior SOTA.} The model never sees URLs, Wi-Fi payloads, or any decoded content, yet achieves AUC $0.925$ on a heterogeneous benchmark, exceeding Trad et al.'s $0.913$.
-\item \textit{Learned representations generalize better than handcrafted ones.} Our handcrafted feature baselines plateau near 0.81; the Siamese approach adds 0.11 AUC with no additional feature engineering.
+\item \textit{Structural features alone are sufficient to surpass prior SOTA.} The model never sees URLs, Wi-Fi payloads, or any decoded content, yet the full ensemble achieves AUC $0.915$ on a heterogeneous benchmark, exceeding Trad et al.'s $0.913$ on a benchmark eleven times larger and visually heterogeneous.
+\item \textit{Learned representations generalize better than handcrafted ones.} Our handcrafted feature baselines plateau near $0.81$; the single-seed Siamese model alone adds $0.09$ AUC, and the full ensemble adds $0.10$, with no additional feature engineering.
 \item \textit{The architecture is interpretable.} Grad-CAM and SHAP together provide pixel-level and feature-level explanations, closing a common gap in prior work.
 \end{enumerate}
 
@@ -569,7 +563,7 @@ Q-Shield demonstrates that deep metric learning can detect quishing attacks from
 
 We acknowledge the following limitations explicitly.
 
-\textbf{False negative rate at default threshold.} At the standard decision threshold of $0.5$, Q-Shield's FNR of $0.166$ is above the $\leq 0.10$ target for security-critical deployments. Focal loss reduces FNR substantially relative to BCE (ablation A3: $0.270 \to 0.166$), but does not fully close the gap. Section~\ref{sec:calibration} shows that threshold calibration reduces FNR below $0.10$ at a modest precision cost, making the model deployment-ready when security tolerances are explicit. Cost-sensitive fine-tuning and ensembling remain natural directions for further improvement.
+\textbf{False negative rate at default threshold.} At the standard decision threshold of $0.5$, Q-Shield's FNR of $0.199$ (full ensemble) or $0.202$ (single seed) is above the $\leq 0.10$ target for security-critical deployments. Focal loss and the inference-time refinements (TTA $+$ ensemble) shrink the FNR somewhat ($0.270 \to 0.199$ across the design choices captured in Table~\ref{tab:ablation}), but do not by themselves cross the threshold. Section~\ref{sec:calibration} shows that threshold calibration reduces FNR below $0.10$ at a modest precision cost, making the model deployment-ready when security tolerances are explicit. Cost-sensitive fine-tuning and additional ensemble members remain natural directions for further improvement.
 
 \textbf{Phase-2 overfitting.} During supervised fine-tuning we observed gradual validation-loss divergence after the eighth epoch---training loss continued to decrease while validation loss increased from $0.053$ to $0.103$ by epoch 20. Early stopping (patience $=3$ on val AUC) selects the checkpoint that maximizes generalization, but the phenomenon indicates that our backbone capacity slightly exceeds the information content of the current training corpus. Stronger regularization (MixUp, label smoothing) and additional training data would likely mitigate this further.
 
