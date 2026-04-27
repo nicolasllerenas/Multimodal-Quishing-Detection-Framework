@@ -133,6 +133,3 @@ Nicolás Alejandro Llerena Silva, UTEC, Lima, Peru. Advised by Aurea Soriano-Var
 
 Canadian Institute for Cybersecurity at UNB for the Trap4Phish 2025 corpus. F. Trad and A. Chehab for the QR dataset and baseline implementation. Compute support from the UTEC IEEE Computer Society Student Branch Chapter.
 
-## License
-
-MIT.
