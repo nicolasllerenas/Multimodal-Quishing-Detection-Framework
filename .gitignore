@@ -30,6 +30,9 @@ data/raw/**/*.png
 Thumbs.db
 desktop.ini
 
+# Office temporary lock files
+~$*
+
 # IDE
 .vscode/
 .idea/
@@ -52,12 +55,12 @@ paper/*.bbl
 paper/*.blg
 
 # Internal advisor-facing notes (not for public repo)
-docs/resumen_asesora.md
-docs/resumen_ejecutivo_general.md
-docs/analisis_critico_para_asesora.md
-docs/verificacion_tablas_y_datos.md
+#docs/resumen_asesora.md
+#docs/resumen_ejecutivo_general.md
+#docs/analisis_critico_para_asesora.md
+#docs/verificacion_tablas_y_datos.md
 
 # Iteration logs of superseded training attempts
-docs/results/analisis_primer_intento.md
-docs/results/analisis_segundo_intento.md
-docs/results/analisis_tercer_intento.md
+#docs/results/analisis_primer_intento.md
+#docs/results/analisis_segundo_intento.md
+#docs/results/analisis_tercer_intento.md
