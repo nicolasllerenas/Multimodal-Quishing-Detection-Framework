@@ -1,12 +1,18 @@
 # Q-Shield
 
-Siamese network for detecting QR-code phishing (quishing) directly from images, without decoding the payload.
+Multimodal quishing detection framework. Two branches operating on the same QR sample at different stages of the detection pipeline:
 
-Reference implementation for the paper *Q-Shield: An Explainable Siamese Network for Scalable Quishing Detection Without Payload Decoding* (Llerena Silva and Soriano-Vargas, 2026).
+- **Visual branch** — Siamese MobileNetV2 over the QR image. Operates pre-decode, so it works even when the payload cannot be decoded.
+- **Text branch** — DistilBERT over the offline-decoded URL string. Decoding is local: pyzbar reads the QR matrix and returns a string; no network call, no fetch, no JS execution.
+- **Fusion** — small MLP combining `[visual_logit, text_logit, undecodable_flag]` into the final phishing score.
+
+Reference implementation for the paper *Q-Shield: An Explainable Multimodal Framework for Quishing Detection via Siamese Visual and Offline URL Analysis* (Llerena Silva and Soriano-Vargas, 2026).
 
 ## Results
 
-Combined validation set of 21,998 QR samples drawn from Trad et al. (2025) and CIC Trap4Phish 2025 (Nejati et al., 2026). The full configuration is a two-seed ensemble with horizontal-flip test-time augmentation; a single-seed variant is reported alongside as a low-latency alternative.
+Combined validation set of 21,998 QR samples drawn from Trad et al. (2025) and CIC Trap4Phish 2025 (Nejati et al., 2026). The visual-branch numbers below are the published baseline; the multimodal numbers are filled in by `notebooks/10_Multimodal_Fusion.ipynb` and saved to `eval_multimodal.json`.
+
+### Visual branch (single modality)
 
 | Configuration | AUC | F1 | Recall | FNR | CPU (1 image) | Params |
 |---|---|---|---|---|---|---|
@@ -15,21 +21,29 @@ Combined validation set of 21,998 QR samples drawn from Trad et al. (2025) and C
 | **Ensemble + TTA** | **0.9146** | **0.835** | **0.801** | **0.199** | 99.6 ms | 6.16 M |
 | Trad et al. (reported, n=1,998) | 0.9133 | 0.890 | — | — | — | — |
 
-The ensemble exceeds Trad et al.'s reported AUC by +0.13 pp on a benchmark eleven times larger and visually heterogeneous. GPU inference on a Tesla T4 is 6.0 ms per forward pass with batched throughput of 1,156 images/s.
+### Multimodal (visual + URL)
 
-Threshold calibration on the single-seed model reduces FNR from 0.202 to 0.098 by sliding the decision threshold from 0.50 to 0.40, satisfying the conventional ≤ 10% security tolerance. The same calibration applies to the ensemble configuration.
+| Configuration | AUC | F1 | Recall | FNR |
+|---|---|---|---|---|
+| Visual only (single seed) | _from notebook 10_ | | | |
+| Text only (DistilBERT on offline-decoded URL) | _from notebook 10_ | | | |
+| **Fusion (logit MLP)** | _from notebook 10_ | | | |
+
+Threshold calibration on the single-seed visual model reduces FNR from 0.202 to 0.098 by sliding the decision threshold from 0.50 to 0.40, satisfying the conventional ≤ 10% security tolerance.
 
 ## Method
 
-Two-phase training plus two inference-time refinements.
+**Phase 1 — Siamese contrastive pretraining (visual).** Shared MobileNetV2 backbone with a 128-d L2-normalized projection head, trained on class-balanced same-class / different-class pairs with contrastive loss (Chopra et al., 2005). Margin m = 1.5, AdamW with cosine warm restarts, 40 epochs with patience 8.
 
-**Phase 1 — Siamese contrastive pretraining.** A shared MobileNetV2 backbone with a 128-d L2-normalized projection head, trained on class-balanced same-class / different-class pairs with contrastive loss (Chopra et al., 2005). Margin m = 1.5, AdamW with cosine warm restarts, 40 epochs with patience 8.
+**Phase 2 — Supervised classification (visual).** Four-layer dense head (128 → 512 → 128 → 32 → 1) trained with focal loss (γ = 2, α = 0.5). Backbone frozen for the first 5 epochs, then end-to-end fine-tuning for 15 more. Early stopping on validation AUC.
 
-**Phase 2 — Supervised classification.** A four-layer dense head (128 → 512 → 128 → 32 → 1) trained with focal loss (γ = 2, α = 0.5). The backbone is frozen for the first five epochs and fine-tuned end-to-end for the next fifteen. Early stopping on validation AUC.
+**Text branch.** DistilBERT (66M params) fine-tuned on the offline-decoded URL strings with focal loss for 3 epochs, AdamW (lr 2e-5, wd 1e-2), linear warmup-then-decay schedule with 10% warmup. Decoding is performed once per dataset and cached to JSON; samples whose decode fails are encoded as a single `<UNDECODABLE>` sentinel token.
 
-**Inference.** Each image is evaluated together with its horizontal flip (TTA). Probabilities from two models trained with different seeds (42 and 7) are then averaged. The full configuration runs four forward passes per scan; the single-seed variant runs one.
+**Fusion.** 3-input MLP (`[visual_logit, text_logit, undecodable_flag]` → 16 → 1) trained with focal loss for 20 epochs on cached features. Both branches frozen.
 
-Augmentation in both training phases is horizontal flip with p = 0.5. Rotation is intentionally excluded: QR finder patterns encode orientation, so rotating a QR changes its semantics and would inject label noise.
+**Inference.** Visual branch runs original + horizontal flip (TTA). Two-seed ensemble averages over seeds 42 and 7. Text branch runs once (no TTA). Fusion is applied on the cached logits. The four-pass visual configuration plus one text pass is the full multimodal cost.
+
+Augmentation in the visual branch is horizontal flip with p = 0.5; rotation is intentionally excluded because QR finder patterns encode orientation.
 
 ## Datasets
 
@@ -44,73 +58,89 @@ All inputs are normalized to 224×224 grayscale before the CNN. Each corpus is s
 
 ```
 Multimodal-Quishing-Detection-Framework/
+|-- src/qshield/                       installable Python package (`pip install -e .`)
+|   |-- data/
+|   |   |-- trad.py                    Trad et al. pickle loader
+|   |   |-- cic.py                     CIC Trap4Phish zip loader + sampling
+|   |   |-- splits.py                  canonical 80/20 train/val (DATA_SEED=42)
+|   |   |-- transforms.py              224x224 grayscale preprocessing
+|   |   |-- pairs.py                   Phase-1 contrastive pair samplers
+|   |   |-- classify.py                Phase-2 single-image dataset
+|   |   |-- decode.py                  offline QR -> URL via pyzbar (cached)
+|   |   `-- url_dataset.py             multimodal (image, url, label) dataset
+|   |-- models/
+|   |   |-- visual.py                  MobileNetV2 + Siamese + classifier head
+|   |   |-- losses.py                  contrastive + focal
+|   |   |-- text.py                    DistilBERT URL classifier
+|   |   `-- fusion.py                  late-fusion MLPs (logit / embedding level)
+|   |-- training/
+|   |   |-- phase1.py                  Siamese contrastive loop
+|   |   |-- phase2.py                  focal-loss classifier loop
+|   |   |-- text_train.py              DistilBERT fine-tune loop
+|   |   `-- fusion_train.py            cached-features fusion loop
+|   |-- eval/
+|   |   |-- metrics.py                 AUC, F1, FNR, FPR, ECE, Brier, CM
+|   |   |-- tta.py                     horizontal-flip TTA
+|   |   |-- ensemble.py                seed-ensemble averaging
+|   |   `-- calibration.py             threshold sweep + FNR target
+|   |-- xai/
+|   |   `-- gradcam.py                 Grad-CAM hook
+|   `-- utils/                         seeds, paths, paper figure scripts
 |-- notebooks/
-|   |-- 01_EDA_CIC_Trap4Phish.ipynb      Exploratory analysis of CIC
-|   |-- 02_Pattern_Analysis.ipynb        Handcrafted feature baselines
-|   |-- 03_SOTA_Review.ipynb             Literature review tables
-|   |-- 06_Siamese_Training_v3.ipynb     Seed-42 training (Phase 1 + Phase 2)
-|   |-- 07_XAI_GradCAM.ipynb             Grad-CAM, SHAP, embedding-distance analysis
-|   |-- 08_Ablation_CrossDataset.ipynb   Ablation A1-A5 and CV1-CV3
-|   |-- 09_Final_Audit.ipynb             Threshold calibration, per-resolution, latency
-|   |-- train_v3_seed7.py                Seed-7 training for ensemble
-|   |-- eval_v3_on_full_set.py           Single-seed eval on the 21,998 set
-|   |-- eval_v3_tta.py                   Single-seed eval with TTA
-|   `-- eval_ensemble_tta.py             Two-seed ensemble eval with TTA (headline result)
-|-- src/
-|   |-- models/siamese_qr.py             Backbone, Siamese wrapper, losses, datasets, classifier
-|   `-- utils/generate_paper_figures.py  Figures 4, phase 1 curves, phase 2 curves
-|-- figures/                             Generated figures used in the paper
-|-- paper/                               IEEE conference draft (LaTeX) and bibliography
-|-- docs/                                Design notes, advisor summaries, result snapshots
-|   `-- results/                         Per-experiment JSON outputs (audit, ensemble TTA)
-`-- data/                                Empty placeholders; data lives on Google Drive
+|   |-- 01..03                         EDA, baselines, SOTA
+|   |-- 06_Siamese_Training_v3.ipynb   seed-42 visual training
+|   |-- 07_XAI_GradCAM.ipynb           visual XAI
+|   |-- 08_Ablation_CrossDataset.ipynb ablation + cross-dataset
+|   |-- 09_Final_Audit.ipynb           calibration + per-resolution + latency
+|   |-- 10_Multimodal_Fusion.ipynb     visual + text + fusion (NEW)
+|   |-- train_v3_seed7.py              seed-7 visual training
+|   `-- eval_*.py                      thin orchestrators using qshield.*
+|-- paper/                             IEEE LaTeX + bibliography
+|-- figures/                           figures used in the paper
+|-- docs/                              design notes, advisor summaries
+|-- pyproject.toml                     package metadata for `pip install -e .`
+`-- data/                              empty placeholders; corpora live on Drive
 ```
 
-## Running the notebooks
+## Running on Colab
 
-All notebooks are written for Google Colab with Google Drive mounted. They expect a single project folder on the user's Drive containing the Trad pickled dataset and the CIC zip archives:
+The notebooks expect a single project folder on Google Drive containing the dataset zips and the trained checkpoints:
 
 ```python
 BASE = '/content/drive/MyDrive/Proyecto_Quishing_Detection_Nicolas'
 ```
 
-Checkpoints, figures, and CSVs are written back to the same folder. Local execution is possible but has been tested only on the inference path.
+The first cell of every notebook installs the package as editable from the project directory and pulls the Colab-specific dependencies:
 
-Dependencies (installed via pip in each notebook):
-
-```
-torch >= 2.0
-torchvision
-scikit-learn
-shap
-matplotlib
-seaborn
-pandas
-tqdm
-Pillow
+```python
+!apt-get -qq install libzbar0 > /dev/null   # only for notebook 10 (decoding)
+!pip install -q -e $PROJECT
 ```
 
-Training was performed on Tesla T4 (mixed precision, batch 64 for Phase 1, batch 128 for Phase 2). Phase 1 takes about 90 minutes; Phase 2 takes about 12 minutes.
+After install, every module is importable as `from qshield.<subpackage> import ...`. Checkpoints, the URL decode cache, and JSON evaluation outputs are written back to `BASE`.
+
+Phase 1 takes about 90 min on Tesla T4; Phase 2 about 12 min; URL decoding for the full 80k-train + 22k-val split runs in roughly 15 min and is cached so repeated runs are instant.
 
 ## Reproducing the paper numbers
 
-1. `06_Siamese_Training_v3.ipynb` — produces the seed-42 Phase 1 backbone (`siamese_v3_phase1.pth`) and Phase 2 classifier (`classifier_v3_phase2.pth`).
-2. `train_v3_seed7.py` — produces the seed-7 ensemble member (`classifier_v3_seed7_phase2.pth`). Same hyperparameters and data splits as the seed-42 run; only the weight initialization and pair-sampling stochasticity differ.
-3. `07_XAI_GradCAM.ipynb` — Grad-CAM, SHAP, and embedding-distance analysis (Table VI, Figures 5–8).
-4. `08_Ablation_CrossDataset.ipynb` — ablation A1–A5 and cross-dataset CV1–CV3 (Table V panels (a) and (c)). A2–A5 use a 40 % subsample of the training set for compute reasons; the paper reports this in the table footnote.
-5. `eval_v3_on_full_set.py` — single-seed baseline (Table III row 1, Table V row A1).
-6. `eval_v3_tta.py` — single-seed with TTA (Table III row 2, Table V row B1).
-7. `eval_ensemble_tta.py` — two-seed ensemble with TTA (Table III row 3, Table V row B2, Figure 4).
-8. `09_Final_Audit.ipynb` — threshold calibration (Table VII), per-resolution stratification (Table IX), and CPU/GPU latency benchmarks.
+1. `06_Siamese_Training_v3.ipynb` — seed-42 Phase 1 backbone (`siamese_v3_phase1.pth`) and Phase 2 classifier (`classifier_v3_phase2.pth`).
+2. `train_v3_seed7.py` — seed-7 ensemble member (`classifier_v3_seed7_phase2.pth`).
+3. `07_XAI_GradCAM.ipynb` — Grad-CAM, SHAP, embedding-distance analysis.
+4. `08_Ablation_CrossDataset.ipynb` — A1–A5 and CV1–CV3 (40% subsample for A2–A5).
+5. `eval_v3_on_full_set.py` — single-seed baseline.
+6. `eval_v3_tta.py` — single-seed with TTA.
+7. `eval_ensemble_tta.py` — two-seed ensemble with TTA (visual headline result).
+8. `09_Final_Audit.ipynb` — threshold calibration, per-resolution, latency.
+9. `10_Multimodal_Fusion.ipynb` — decodes URLs, fine-tunes DistilBERT on URLs, trains the fusion MLP, reports visual / text / fusion comparison (writes `eval_multimodal.json`).
 
 ## Limitations
 
-The paper (Section VI) discusses seven limitations: default-threshold FNR above the 0.10 target, mild overfitting in Phase 2, unverified URL overlap between Trad and CIC, resolution-dependent performance on QRs above 246 px, imperfect probability calibration (ECE 0.13), the unimodal scope (no text branch), the discarded container-format metadata (PDF, SVG, DOCX), and unevaluated adversarial robustness.
+The paper (Section VI) discusses: default-threshold FNR above the 0.10 target, Phase-2 overfitting, unverified URL overlap between Trad and CIC, resolution-dependent performance on QRs above 246 px, imperfect probability calibration (ECE 0.13), missing surrounding-message context branch, discarded container-format metadata (PDF, SVG, DOCX), and unevaluated adversarial robustness.
 
 ## Planned extensions
 
-- Multimodal fusion with a text branch (DistilBERT or equivalent) on paired QR + message data.
-- Multi-scale or resolution-adaptive backbone to close the gap on large QR images.
+- Surrounding-message context branch (email subject / SMS body / sender metadata) fused with the existing two branches.
+- Multi-scale or resolution-adaptive visual backbone to close the gap on large QR images.
 - Provenance-aware detection: cryptographic signatures and merchant-ID validation as a complementary layer for mobile-payment ecosystems such as Yape (BCP, Peru).
 - Empirical evaluation under module-level adversarial perturbations.
 
@@ -119,7 +149,7 @@ The paper (Section VI) discusses seven limitations: default-threshold FNR above 
 ```
 @inproceedings{llerena2026qshield,
   author    = {Llerena Silva, Nicol{\'a}s Alejandro and Soriano-Vargas, Aurea},
-  title     = {{Q-Shield}: An Explainable Siamese Network for Scalable Quishing Detection Without Payload Decoding},
+  title     = {{Q-Shield}: An Explainable Multimodal Framework for Quishing Detection via Siamese Visual and Offline URL Analysis},
   booktitle = {(submitted)},
   year      = {2026}
 }
