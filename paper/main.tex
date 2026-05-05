@@ -79,7 +79,7 @@ In this paper, we propose \textbf{Q-Shield}, a multimodal framework that closes 
 
 \item \textbf{Cross-dataset generalization as a first-class design objective.} Q-Shield is trained and evaluated jointly on Trad~\cite{trad2025detecting} and CIC Trap4Phish 2025~\cite{nejati2026cic}, producing a 21{,}998-sample heterogeneous validation set spanning multiple QR versions and image formats---an order of magnitude larger than the largest prior evaluation.
 
-\item \textbf{Calibrated operating points for security deployment.} Beyond the default-threshold AUC of $0.915$, F1 of $0.835$, and recall of $0.801$ obtained by the visual-branch ensemble, we provide a threshold-calibration analysis showing that Q-Shield reaches FNR $\leq 0.10$---the conventional security tolerance---without retraining.
+\item \textbf{Operating-point guarantees for security deployment.} The fused multimodal model achieves FNR $0.057$ at the default threshold, already below the conventional $\leq 10\%$ security tolerance without any retraining or calibration. The visual fallback (used when the QR cannot be decoded) admits a calibrated threshold that reaches FNR $0.098$, so the system meets the target in both the decodable and the undecodable regimes.
 
 \item \textbf{Dual-layer explainability, cross-validated.} We combine Grad-CAM visualization of convolutional attention with SHAP analysis of the learned embedding dimensions, and verify on each dataset separately (Pearson $r=0.43$ between class-difference attention maps) that the learned attention patterns are not dataset artifacts.
 \end{itemize}
@@ -266,12 +266,12 @@ For computational tractability we draw a stratified sample of $50{,}000$ QR code
 \label{sec:results}
 %% ============================================================
 
-\subsection{Main Results}
+\subsection{Visual Branch Results}
 
-Table~\ref{tab:main} summarizes the main experimental results. The full Q-Shield configuration---a two-seed ensemble of Siamese-contrastive backbones combined with horizontal-flip test-time augmentation (TTA)---achieves AUC $0.9146$, recall $0.801$, F1 $0.835$, and FNR $0.199$ on the $21{,}998$-sample combined validation set. A single-model variant (single seed, no TTA) achieves AUC $0.8962$, providing a configurable accuracy/latency trade-off at deployment time. Both variants outperform the handcrafted feature baselines by a wide margin ($+0.10$ to $+0.11$ AUC) and the full configuration exceeds the previously reported SOTA of Trad et al.~\cite{trad2025detecting} ($+0.001$ AUC) on a benchmark eleven times larger and visually heterogeneous.
+We first characterize the visual branch in isolation; the multimodal comparison that produces the paper's headline result is reported in Section~\ref{sec:multimodal-results}. Table~\ref{tab:main} summarizes the visual-only configurations on the joint $21{,}998$-sample validation set. The strongest visual configuration---a two-seed ensemble of Siamese-contrastive backbones combined with horizontal-flip test-time augmentation (TTA)---achieves AUC $0.9146$, recall $0.801$, F1 $0.835$, and FNR $0.199$. A single-model variant (single seed, no TTA) achieves AUC $0.8962$ at one-quarter of the inference cost, providing a configurable accuracy/latency trade-off when the visual branch must operate alone. Both variants outperform the handcrafted feature baselines by a wide margin ($+0.10$ to $+0.11$ AUC), and the visual ensemble matches the previously reported SOTA of Trad et al.~\cite{trad2025detecting} ($+0.001$ AUC) on a benchmark eleven times larger and visually heterogeneous. The visual branch is the operative signal whenever the QR payload cannot be decoded; how well it performs in isolation therefore directly bounds the system's worst-case accuracy.
 
 \begin{table}[!htbp]
-\caption{Main Results on Combined Validation Set (n=21{,}998)}
+\caption{Visual Branch on Combined Validation Set (n=21{,}998)}
 \label{tab:main}
 \centering
 \renewcommand{\arraystretch}{1.2}
@@ -297,7 +297,7 @@ Q-Shield (single seed, $+$TTA)         & 0.9053 & 0.853 & 0.799 & 0.825 & 0.201 
 \end{tabular}%
 }
 \end{table}
-Three observations are worth emphasizing. First, the handcrafted feature baselines are identical across RF, XGBoost, and LightGBM to within $0.005$ AUC, suggesting that the features themselves are the bottleneck rather than the classifier choice. Second, Q-Shield's Siamese-based deep learning approach outperforms these baselines by a wide margin ($+0.10$ AUC for the single-model variant) and the ensemble configuration surpasses the previously reported SOTA by $+0.001$ AUC, achieved on an evaluation set an order of magnitude larger ($21{,}998$ vs.\ $1{,}998$ samples) and drawn from mixed-resolution images spanning multiple QR versions---a regime the pixel-level baseline was not designed for. Third, the per-model parameter count is $3.08$M against Trad's $\sim$$4{,}761$ raw pixel features fed to a tree ensemble; the two-model ensemble totals $6.16$M parameters, which remains compact for mobile deployment.
+Three observations are worth emphasizing about the visual branch. First, the handcrafted feature baselines are identical across RF, XGBoost, and LightGBM to within $0.005$ AUC, suggesting that the features themselves are the bottleneck rather than the classifier choice. Second, the Siamese-based deep learning approach outperforms these baselines by a wide margin ($+0.10$ AUC for the single-model variant) and the ensemble configuration matches the previously reported SOTA on an evaluation set an order of magnitude larger ($21{,}998$ vs.\ $1{,}998$ samples) and drawn from mixed-resolution images spanning multiple QR versions---a regime the pixel-level baseline was not designed for. Third, the per-model parameter count is $3.08$M against Trad's $\sim$$4{,}761$ raw pixel features fed to a tree ensemble; the two-model ensemble totals $6.16$M parameters, which remains compact for mobile deployment of the visual fallback.
 
 The TTA gain is robust: averaging probabilities from the original image and its horizontal flip adds $+0.91$ pp AUC over the single-pass model. The two-seed ensemble (seeds 42 and 7), in turn, adds $+0.93$ pp on top of the single-seed TTA. Both improvements are applied at inference only and require no architectural change. The training-time and inference-time costs of these refinements are quantified in Section~\ref{sec:inference}.
 
@@ -328,14 +328,25 @@ Text only (DistilBERT on URLs)   & 0.9592 & 0.923 & 0.931 & 0.927 & 0.069 \\
 
 Two reading rules apply to this table. First, the text branch is upper-bounded by the fraction of QRs that decode successfully---decode failures are charged to the text-only column as $P(\text{phish}) = 0.5$, the prior, which simulates a system that has no signal to act on. Second, the fusion row is the operationally relevant configuration: it inherits the text-branch's accuracy when decoding succeeds and falls back to the visual-branch's score when it does not. The undecodability flag in the fusion input lets the head learn this fallback behaviour without manual logic.
 
-Figure~\ref{fig:cm_roc} visualizes the default-threshold decision behavior of the full ensemble configuration. The confusion matrix reveals that at $p=0.5$, Q-Shield correctly classifies $9{,}703$ of $11{,}001$ benign samples and $8{,}805$ of $10{,}997$ phishing samples, with $2{,}192$ false negatives that motivate the threshold calibration analysis in Section~\ref{sec:calibration}. The ROC curve confirms the strong discrimination captured by AUC $= 0.9146$, with a clearly non-degenerate separation between the default and calibrated operating points.
+Figure~\ref{fig:cm_roc} visualizes the default-threshold decision behavior of the fused configuration. The confusion matrix reveals that at $p=0.5$, Q-Shield correctly classifies $10{,}201$ of $11{,}001$ benign samples and $10{,}374$ of $10{,}997$ phishing samples, with only $623$ false negatives---a $3.5\times$ reduction relative to the visual ensemble in Table~\ref{tab:main}. The ROC curve confirms the strong discrimination captured by AUC $= 0.9749$.
 
-\begin{figure*}[!t] % <--- CAMBIO AQUÍ: Solo [!t] para doble columna
+\begin{figure*}[!t]
 \centering
 \includegraphics[width=0.88\textwidth]{fig_confusion_roc.png}
-\caption{(a) Confusion matrix of the full Q-Shield configuration (2-seed ensemble + TTA) on the combined $21{,}998$-sample validation set at default threshold $p=0.5$: TN$=9{,}703$, FP$=1{,}298$, FN$=2{,}192$, TP$=8{,}805$. (b) ROC curve corresponding to AUC $=0.9146$, with two operating points marked: the default ($p=0.5$, black dot) and the calibrated point ($p=0.4$, green square) that meets the FNR $\leq 10\%$ security tolerance.}
+\caption{(a) Confusion matrix of the full multimodal Q-Shield configuration (visual + text + fusion) on the combined $21{,}998$-sample validation set at default threshold $p=0.5$: TN$=10{,}201$, FP$=800$, FN$=623$, TP$=10{,}374$. (b) ROC curve corresponding to AUC $=0.9749$. The default operating point already meets the FNR $\leq 10\%$ security tolerance (FNR $= 0.057$) without recourse to threshold calibration.}
 \label{fig:cm_roc}
 \end{figure*}
+
+\subsection{Branch-by-Branch Comparison}
+
+Figure~\ref{fig:branch_compare} reports the same numbers in Table~\ref{tab:multimodal} as a grouped bar chart, with one bar per metric (AUC, F1, recall, $1{-}\text{FNR}$, $1{-}\text{ECE}$) for each of the three branches. The visual gap between the visual-only baseline and the text branch is the largest single jump; the fusion adds a smaller but consistent margin on top, and the calibration metrics are where the fusion's contribution is most visible.
+
+\begin{figure}[!htbp]
+\centering
+\includegraphics[width=\columnwidth]{fig_branch_comparison.png}
+\caption{Per-branch comparison on the joint validation set (n=$21{,}998$). Bars report the metrics on which higher is better; ECE is plotted as $1-\text{ECE}$ for visual consistency. Fusion (logit MLP) dominates each metric; visual alone is reported because it is the only signal available when the QR cannot be decoded.}
+\label{fig:branch_compare}
+\end{figure}
 
 \subsection{Benchmarking and Gaps Closed}
 \label{sec:benchmark}
@@ -366,11 +377,13 @@ Dual explainability (Grad-CAM + SHAP)       & No        & No        & \textbf{Ye
 Threshold calibration for security          & No        & No        & \textbf{Yes} \\
 Edge-deployable ($<5$M params per model)    & --        & No        & \textbf{Yes ($3.08$M)} \\
 Evaluation samples                          & $2$K      & --        & \textbf{$22$K} \\
-Best AUC reported                           & $0.913$   & $>0.95^{*}$ & \textbf{$0.915$} \\
+Best visual-branch AUC reported             & $0.913$   & $0.88$      & \textbf{$0.915$} \\
+Best fused-pipeline AUC reported            & --        & --          & \textbf{$0.975$} \\
+Default-threshold FNR reported              & --        & --          & \textbf{$0.057$} \\
 \bottomrule
 \end{tabular}
 \\[2pt]
-{\footnotesize $^{*}$ Reported on URL-derived features, not QR images directly; not directly comparable.}
+{\footnotesize CIC's text-only branch (LLMs over decoded URLs) reaches F1 $0.97$--$0.99$ in their report but is not reported with a single AUC and is not fused with the visual branch in their pipeline.}
 \end{table*}
 
 Three gaps deserve explicit attention. The numbers reported in Table~\ref{tab:gaps} correspond to the visual branch in isolation; the multimodal fused configuration is reported separately in Section~\ref{sec:multimodal-results} once the text branch is added on top. \textbf{Gap 1: cross-dataset evaluation.} Neither Trad nor CIC report performance when the model is trained on one corpus and tested on the other. Our experiments (Table~\ref{tab:ablation}(c)) show that under such a zero-shot transfer protocol, models trained on a single dataset degrade to near-random performance (AUC $0.52$) or to classifier collapse (AUC $0.72$ with $\text{FNR} = 0$). Q-Shield's combined-training design holds $0.896$ AUC (single-seed) or $0.915$ AUC (full ensemble) across the joint test distribution---a capability that cannot be directly compared to prior work because prior work did not measure it. \textbf{Gap 2: operational FNR guarantees.} Prior work reports a single operating point. We show (Section~\ref{sec:calibration}) that Q-Shield admits a calibrated threshold achieving FNR $\leq 0.10$, the conventional security tolerance. \textbf{Gap 3: interpretability at both pixel and feature levels.} Prior structural approaches provide either feature importance (Trad) or handcrafted interpretability (Wahid et al.) but not both spatial and latent-space explanations. Q-Shield integrates Grad-CAM over the convolutional backbone with SHAP over the learned embedding dimensions, and we validate the spatial attention pattern across both datasets separately to rule out dataset-specific artifacts.
@@ -546,12 +559,12 @@ Figure~\ref{fig:threshold} plots the full threshold sweep. Two observations supp
 
 For completeness we also report probability-calibration diagnostics: Brier score $0.138$ and Expected Calibration Error (ECE) $0.129$. These values indicate that the raw sigmoid output is a good ranker but an imperfect probability estimator, a common property of networks trained with focal loss. Deployment scenarios that require genuine probability estimates (rather than binary decisions) would benefit from post-hoc temperature scaling; we do not explore this here because our target operational output is a calibrated binary decision.
 
-The threshold sweep above is computed on the single-seed Q-Shield to isolate the calibration analysis from the ensembling discussion. The full ensemble configuration shifts the score distribution slightly (its precision at $p=0.5$ is higher and recall is comparable, see Table~\ref{tab:main}), but the qualitative trade-off curve and the existence of a calibrated operating point that meets FNR $\leq 0.10$ are preserved.
+The threshold sweep above is computed on the single-seed visual model to isolate the calibration analysis from the ensembling discussion. Two notes apply when reading it. First, the visual ensemble shifts the score distribution slightly (its precision at $p=0.5$ is higher and recall is comparable, see Table~\ref{tab:main}), but the qualitative trade-off curve and the existence of a calibrated operating point that meets FNR $\leq 0.10$ are preserved. Second, the multimodal fused configuration of Section~\ref{sec:multimodal-results} reaches FNR $0.057$ at the default threshold, so its threshold-calibration story is operationally a no-op: the security target is already met. We retain the calibration analysis because it characterizes the visual fallback regime---when the QR cannot be decoded, the system reduces to the visual branch and the calibrated threshold becomes the relevant operating point.
 
 \subsection{Inference Cost}
 \label{sec:inference}
 
-The deployment cost of Q-Shield depends on which configuration is used. Table~\ref{tab:inference} reports per-image latency, model size, and accuracy for the three operating modes corresponding to the rows of Table~\ref{tab:ablation}(b).
+The deployment cost of Q-Shield depends on which configuration is used. Table~\ref{tab:inference} reports per-image latency, model size, and accuracy for the four operating modes considered in the paper. The visual-only rows correspond to Table~\ref{tab:ablation}(b); the fused row adds the cost of one DistilBERT forward pass and a 161-parameter MLP on top of the single-seed visual branch.
 
 \begin{table}[!htbp]
 \caption{Inference Cost vs.\ Accuracy Trade-off}
@@ -563,14 +576,15 @@ The deployment cost of Q-Shield depends on which configuration is used. Table~\r
 \toprule
 \textbf{Configuration} & \textbf{Params} & \textbf{Disk} & \textbf{CPU} & \textbf{AUC} \\
 \midrule
-Single seed, no TTA   & $3.08$M  & $12$\,MB  & $24.9$\,ms  & $0.896$ \\
-Single seed $+$ TTA   & $3.08$M  & $12$\,MB  & $49.8$\,ms  & $0.905$ \\
-\textbf{Ensemble $+$ TTA} & $6.16$M  & $24$\,MB  & $99.6$\,ms  & $\mathbf{0.915}$ \\
+Visual single seed, no TTA      & $3.08$M  & $12$\,MB  & $24.9$\,ms  & $0.896$ \\
+Visual single seed $+$ TTA      & $3.08$M  & $12$\,MB  & $49.8$\,ms  & $0.905$ \\
+Visual ensemble $+$ TTA         & $6.16$M  & $24$\,MB  & $99.6$\,ms  & $0.915$ \\
+\textbf{Fusion (visual + DistilBERT URL)} & $\mathbf{69.1}$M & $\mathbf{267}$\,MB & $\mathbf{\sim 95}$\,ms & $\mathbf{0.975}$ \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-Each model contains $3.08$M trainable parameters and occupies $12.0$\,MB on disk in FP32. On a mid-range CPU, a single forward pass completes in $24.9$\,ms; on a Tesla T4 GPU, the same forward pass completes in $6.0$\,ms with batched throughput of $1{,}156$ images per second (batch size $32$). The TTA refinement requires two forward passes per image (original and horizontal flip), and the two-seed ensemble runs the same protocol on each model and averages the resulting probabilities, for a total of four forward passes in the full configuration. The end-to-end CPU latency of $\sim$$100$\,ms remains within the perceptual budget commonly cited for interactive mobile applications. For latency-critical or low-power deployments the single-model variant offers a $0.018$ AUC concession in exchange for a $4\times$ reduction in compute.
+Each visual model contains $3.08$M trainable parameters and occupies $12.0$\,MB on disk in FP32. On a mid-range CPU, a single forward pass completes in $24.9$\,ms; on a Tesla T4 GPU, the same forward pass completes in $6.0$\,ms with batched throughput of $1{,}156$ images per second (batch size $32$). The TTA refinement requires two forward passes per image (original and horizontal flip), and the two-seed ensemble runs the same protocol on each model, for a total of four forward passes in the visual ensemble. The fused multimodal configuration is dominated by DistilBERT ($66$M parameters, $\sim$$255$\,MB on disk), which adds one tokenization and one transformer forward pass per scan. On a Tesla T4, DistilBERT at sequence length $96$ runs in approximately $7$\,ms per sample, plus the visual branch ($25$\,ms CPU or $6$\,ms GPU) and the $161$-parameter fusion head whose cost is negligible. The end-to-end CPU latency of $\sim$$100$\,ms for the fused configuration sits at the edge of the interactive-mobile budget, with the $0.06$ AUC margin over the visual ensemble fully justifying the additional cost where decoding is feasible. For latency-critical or low-power deployments where the text branch cannot run, the visual single-seed variant offers a $0.079$ AUC concession (relative to fused) in exchange for a roughly $4\times$ compute reduction.
 
 \subsection{Per-Resolution Performance}
 \label{sec:resolution}

@@ -34,17 +34,19 @@ Current phishing detection systems analyze:
 
 **Evidence:** Major email security providers (Google Safe Browsing, Microsoft Defender) flag malicious URLs in text but pass through the same URLs when encoded as QR images (Trad & Chehab, 2025).
 
-### Problem 2: The Decoding Paradox
+### Problem 2: Single-Modality Limits and the Decoding Question
 
-The intuitive solution — "just decode the QR code and analyze the URL" — creates a fundamental security problem:
+The intuitive solution — "decode the QR and analyze the URL" — was historically framed as creating a security paradox, but a careful reading dissolves the paradox into two separable steps:
 
-1. **Decoding requires executing the QR scan**, which may trigger an automatic redirect
-2. **QR codes can encode multiple data types** (URLs, Wi-Fi credentials, payment info, vCards), making URL-only analysis insufficient
-3. **Obfuscated payloads** use URL shorteners, redirects, and encoding tricks that are only revealed after following the chain
+1. **Reading the encoded string** (e.g., with `pyzbar` / libzbar) is local, deterministic, and offline. It does not perform a network call, DNS lookup, or browser render. This step is safe.
+2. **Opening the URL** (browser fetch + JavaScript execution) is what carries the actual exposure risk.
 
-> **The Paradox:** To determine if a QR code is malicious, you must decode it. But decoding it exposes you to the malicious content.
+What does remain a real challenge is that **either modality alone is insufficient in heterogeneous deployments**:
 
-Q-Shield resolves this paradox by analyzing the QR code's **visual structure** without ever decoding its payload.
+- A **URL-only detector** assumes the QR can be decoded; it has no signal when decoding fails (low contrast, missing quiet zone, damaged finder pattern, non-URL payloads such as Wi-Fi or vCard).
+- An **image-only detector** has weaker discriminative power on visually heterogeneous QR distributions (CIC Trap4Phish 2025 reports SSIM benign↔malicious ≈ 0.34 and CNN F1 0.88 for the image-only branch versus F1 0.97-0.99 for an LLM over the decoded URL on the same corpus).
+
+Q-Shield operates in both regimes simultaneously. A pre-decode visual branch (Siamese MobileNetV2) consumes the QR image; an offline URL decoder feeds the post-decode payload to a transformer (DistilBERT) text branch; a small late-fusion head with an explicit *undecodability* flag produces the final probability. The fusion inherits the URL branch's accuracy when decoding succeeds and the visual branch's score when it does not, achieving AUC 0.9749 on the joint validation set.
 
 ### Problem 3: Localization Gap
 

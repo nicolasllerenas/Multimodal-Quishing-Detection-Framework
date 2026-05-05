@@ -1,19 +1,20 @@
 # Q-Shield — Resumen Ejecutivo Integral
 
-**Para:** Validacion del proyecto completo (teoria + practica + formulas)  
-**Autor:** Nicolas Alejandro Llerena Silva  
-**Fecha:** Abril 2026  
+**Para:** Validacion del proyecto completo (teoria + practica + formulas)
+**Autor:** Nicolas Alejandro Llerena Silva
+**Fecha:** Mayo 2026
 **Lectura estimada:** 25-30 minutos
+**Status:** Pivote multimodal completado. Fusion alcanza AUC 0.9749 en el benchmark de 21,998 muestras.
 
 ---
 
 # INDICE
 
-- PARTE I: Teoria (secciones 1-5)
-- PARTE II: Formulas del paper explicadas linea por linea (secciones 6-12)
-- PARTE III: Practica — experimentos y numeros (secciones 13-17)
-- PARTE IV: Validacion y justificacion (secciones 18-20)
-- PARTE V: Cheat sheet para defender el paper (seccion 21)
+- PARTE I: Teoria del problema y de la solucion (secciones 1-7)
+- PARTE II: Formulas del paper explicadas linea por linea (secciones 8-13)
+- PARTE III: Practica — experimentos y numeros (secciones 14-19)
+- PARTE IV: Validacion y justificacion (secciones 20-22)
+- PARTE V: Cheat sheet para defender el paper (seccion 23)
 
 ---
 
@@ -24,121 +25,125 @@
 **Quishing** (QR + Phishing) es un ataque donde un atacante genera un codigo QR que, al ser escaneado, redirige al usuario a una pagina fraudulenta que roba credenciales o instala malware.
 
 **Por que es grave ahora:**
+
 - Los codigos QR se usan masivamente en pagos moviles, menus, tickets, etc.
 - Los usuarios confian ciegamente en que los QRs son legitimos
-- Las herramientas anti-phishing tradicionales **no ven** la URL dentro de la imagen del QR
+- Las herramientas anti-phishing tradicionales no procesan la URL contenida en una imagen QR a menos que la imagen sea decodificada primero
 
 ## 2. ¿Por que es dificil detectarlo?
 
-Tres problemas:
+Tres problemas reales:
 
-**1. Ceguera visual.** Un filtro de email lee texto. La URL maliciosa esta INVISIBLE dentro de la imagen del QR.
+**1. Ceguera del filtro estandar.** Un filtro de email lee texto plano. La URL maliciosa esta dentro de la imagen del QR — un filtro que no decodifica el QR no la ve.
 
-**2. Paradoja del decodificado.** Para analizar la URL hay que decodificar el QR primero, pero DECODIFICAR = primer paso del ataque. La URL se abre antes de poder analizarla.
+**2. La señal visual sola es debil fuera del sandbox.** Trad et al. 2025 reportan AUC 0.913 sobre QRs version 13 fija, EC `low`, sin logos — un escenario de laboratorio. CIC Trap4Phish 2025 reporta SSIM benigno↔phishing ≈ 0.34: visualmente casi indistinguibles. El CNN de CIC sobre imagenes alcanza solo F1 0.88 en QRs heterogeneos. Conclusion: el patron pixel-level es informativo pero no suficiente cuando los QRs varian en version, resolucion y formato.
 
-**3. Variabilidad.** Los datasets existentes son homogeneos (un solo formato, una sola resolucion). No generalizan al mundo real.
+**3. La señal de URL es fuerte pero requiere decodificar.** CIC reporta F1 0.97-0.99 con LLMs sobre la URL decodificada. Decodificar con `pyzbar` es local — lee el patron de modulos y devuelve un string, sin red, sin DNS, sin JS. La "paradoja del decodificado" que algunos trabajos invocan confunde dos pasos distintos: leer el contenido (seguro) y abrirlo (riesgoso).
 
 ## 3. ¿Que propone Q-Shield?
 
-**Idea central:** Analizar la ESTRUCTURA VISUAL del QR (patron de modulos blancos/negros) SIN decodificar.
+**Idea central:** combinar las dos señales, no elegir una. La defensa contra quishing tiene dos puntos de intervencion naturales — pre-decodificacion (solo imagen) y post-decodificacion (URL como string) — y un detector que opera en uno solo descarta la evidencia del otro.
 
-**Por que funciona:** URLs largas y obfuscadas (tipicas de phishing) generan QRs con mas modulos negros y patrones mas densos que URLs cortas y legitimas. El modelo aprende a distinguir estos patrones sin leer la URL.
+**Diseño:**
 
-**Metafora:** Como reconocer si un sobre cerrado contiene una carta o un paquete solo mirando su forma y peso. No necesitas abrirlo.
+1. **Rama visual** — MobileNetV2 Siamese sobre la imagen QR. Opera pre-decode. Es la unica señal disponible cuando el QR no se puede decodificar (bajo contraste, quiet zone faltante, finder patterns dañados).
+2. **Rama de texto** — DistilBERT sobre la URL decodificada offline. Opera post-decode. Captura la señal lexica que CIC mostro que es la mas fuerte.
+3. **Fusion** — un MLP pequeño que combina `[logit_visual, logit_texto, flag_undecodable]` → probabilidad final. El flag explicito le permite a la cabeza aprender que cuando el decode falla, debe confiar mas en el visual.
+
+**Resultado headline:** AUC 0.9749, F1 0.936, FNR 0.057 sobre 21,998 muestras (Trad + CIC). Supera a Trad por +6.16 pp y al ensemble visual previo por +6.03 pp. El FNR ya cumple la tolerancia de seguridad ≤10% sin necesidad de threshold calibration.
 
 ## 4. ¿Como funciona a alto nivel?
 
-Dos fases de entrenamiento:
+**Tres etapas, dos fases de entrenamiento, un modelo de inferencia:**
 
-**Fase 1 (Contrastive pretraining):** Le mostramos al modelo pares de QRs y le decimos "estos dos son de la misma clase" (se parecen) o "estos dos son de clases distintas" (se diferencian). El modelo aprende a producir "codigos resumen" (embeddings) donde los de la misma clase quedan cerca y los de distintas clases quedan lejos.
+1. **Phase 1 (visual contrastive pretraining):** mostramos al MobileNetV2 pares de QRs y le decimos "misma clase" o "clases distintas". Aprende un espacio de embedding 128-d donde los QRs benignos quedan cerca entre si, los phishing quedan cerca entre si, y benigno-phishing se separan.
+2. **Phase 2 (visual classifier head):** sobre el backbone preentrenado, entrenamos una cabeza densa con focal loss para clasificacion binaria. Esto produce el clasificador visual del paper anterior.
+3. **Text branch fine-tuning:** DistilBERT (66M params) se ajusta sobre las URLs decodificadas con focal loss durante 3 epochs. Aprende patrones lexicos de phishing.
+4. **Fusion training:** sobre features ya cacheadas (logits del visual, logits del text, flag undecodable), entrenamos un MLP de 161 parametros (3→16→1). Esto solo aprende la calibracion relativa entre las dos ramas.
 
-**Fase 2 (Supervised classification):** Usamos esos embeddings como entrada a un clasificador binario que predice phishing o legitimo.
+En inferencia: cada QR pasa por las dos ramas (visual y text decoder + DistilBERT), los logits van a la fusion, y sale la probabilidad final.
 
-## 5. ¿Por que el modelo es explicable?
+## 5. ¿Por que pivotamos? La motivacion del giro multimodal
 
-Dos tecnicas XAI:
+La version inicial del paper era visual-only y usaba "no decoding" como argumento de seguridad. Despues de releer Trad y CIC identificamos tres problemas que un reviewer atacaria de inmediato:
 
-**Grad-CAM:** genera un mapa de calor sobre el QR mostrando donde miró el modelo. Nos permite verificar que atiende zonas sensatas (la zona de datos) y no patrones fijos (los finder patterns de las esquinas).
+1. **El "decoding paradox" no se sostiene.** pyzbar es local y deterministico. Confunde leer (string) con abrir (fetch + render). Un reviewer informado lo derriba.
+2. **La señal visual sola es estructuralmente debil.** CIC lo demuestra empiricamente con SSIM 0.34 y CNN F1 0.88 en QRs heterogeneos.
+3. **Combinar ambas dominaba a cualquiera sola, por construccion.** Bountakas 2023 y Khalifa 2025 ya lo validaron en webpages.
 
-**SHAP:** nos dice cual de las 128 dimensiones del embedding contribuye mas a la prediccion. Nos permite verificar que la señal esta distribuida razonablemente y que el modelo no depende de una sola dimension arbitraria.
+El pivote es honesto: la rama visual NO se descarta — es el fallback graceful cuando el decode falla (~5% del corpus). El flag UNDECODABLE le dice al fusion "trust visual aqui". El sistema degrada limpiamente al modo visual-solo en el peor caso.
+
+## 6. ¿Por que el modelo es explicable?
+
+Tres tecnicas XAI cubriendo niveles distintos:
+
+- **Grad-CAM** sobre la rama visual: mapa de calor que muestra donde miro el modelo. Verifica que atiende zonas de datos y no finder patterns. Validado per-dataset (r=0.43 entre los mapas de Trad y CIC) — la señal visual es estructural, no dataset-specific.
+- **SHAP** sobre el embedding de 128-d: mide que dimensiones contribuyen mas. Encontramos que las top-20 dominan; las 108 restantes son ruido — el embedding esta sobre-parametrizado y se podria podar a 32-d sin perdida.
+- **Calibracion probabilistica** del fusion: Brier 0.054, ECE 0.038. El fusion es un buen ranker Y un buen estimador de probabilidades. La rama visual sola tiene Brier 0.146 y ECE 0.133 — mucho peor.
+
+## 7. ¿Como nos comparamos con CIC?
+
+**CIC reporta text-only F1 0.97-0.99** con LLMs dedicados (BERT-Tiny, DeBERTa-v3, ModernBERT, DeepSeek-R1-Distill). Es el numero mas alto en URL-only.
+
+**Q-Shield text-only F1 0.927** con DistilBERT 66M, 3 epochs. Esta debajo de CIC porque:
+
+- DistilBERT es mas chico que DeBERTa-v3 o ModernBERT
+- Usamos solo 3 epochs vs el setup mas largo de CIC
+- Ellos prepararon el dataset desde cero con etiquetas limpias, nosotros usamos la decodificacion offline directa
+
+**Q-Shield fusion F1 0.936**, AUC 0.9749. Estamos **debajo de CIC en URL pura** pero **arriba en deteccion integrada** porque:
+
+- CIC text-only no aborda el caso UNDECODABLE — silencio sobre que pasa con QRs no decodificables
+- Nuestro fusion + flag explicito tiene fallback graceful
+- Combinar visual + text es lo que CIC NO hace — ellos reportan las dos ramas en paralelo, no fusionadas
+
+Conclusion honesta: con un LLM mas grande y mas epochs cerrariamos la brecha en text-only. La contribucion de Q-Shield no es ganarle a CIC en URL pura — es ofrecer un detector multimodal end-to-end con manejo explicito del caso degradado.
 
 ---
 
 # PARTE II — FORMULAS DEL PAPER EXPLICADAS LINEA POR LINEA
 
-Esta seccion cubre CADA formula del paper con su justificacion. Si un reviewer te pregunta "¿por que usan X?", aqui tienes la respuesta.
+Esta seccion cubre cada formula del paper con su justificacion. Si un reviewer pregunta "¿por que usan X?", aqui tienes la respuesta.
 
-## 6. Formulacion del problema
+## 8. Formulacion del problema
 
 **Formula (eq. 1 del paper):**
 
 ```
-f_θ(x) = σ(g_φ ∘ h_ψ(x))
+f_θ(x) = σ( g_φ ∘ h_ψ (x) )
 ```
 
-**Que significa cada simbolo:**
-- `x` = una imagen de QR code en escala de grises (matriz H×W de pixeles)
-- `h_ψ` = la red convolucional (MobileNetV2) que convierte `x` en un vector de 128 numeros (embedding). `ψ` son sus pesos entrenables.
-- `g_φ` = la cabecera de clasificacion que toma el embedding y produce un logit (numero real, sin normalizar). `φ` son sus pesos.
-- `σ` = funcion sigmoide, que convierte el logit en probabilidad [0, 1].
-- `f_θ(x)` = la probabilidad final de que `x` sea phishing. `θ = ψ ∪ φ`.
+**Que dice:**
 
-**Por que esta descomposicion:**
-- Separar `h_ψ` (extractor) de `g_φ` (clasificador) permite entrenar el extractor PRIMERO con contrastive learning (sin etiquetas binarias) y DESPUES el clasificador con BCE/focal.
-- Esto es mejor que entrenar todo junto porque el contrastive objective genera embeddings mas generalizables.
+- `x ∈ ℝ^(H×W)` es la imagen QR en grayscale
+- `h_ψ` es la funcion de embedding (el backbone): mapea la imagen a un vector en `ℝ^d` con `d=128`
+- `g_φ` es la cabeza clasificadora: mapea el embedding a un logit (numero real)
+- `σ` es la sigmoide: aplasta el logit a `[0,1]` (probabilidad)
 
-**Defensa ante reviewer:** "Esta descomposicion es estandar en two-stage contrastive learning (Chen et al. SimCLR, Chopra et al. 2005). Permite pretrain/fine-tune decoupling."
+**Por que dos componentes:** `h_ψ` se entrena en Phase 1 con contrastive loss para producir representaciones discriminativas. `g_φ` se entrena en Phase 2 con focal loss para tomar decisiones binarias. La separacion permite reutilizar `h_ψ` para tareas auxiliares (XAI, recuperacion, etc.).
 
-## 7. Contrastive Loss (Chopra et al. 2005)
+**Para multimodal:** la rama de texto produce su propio logit `ℓ_t`, y el fusion combina `[ℓ_v, ℓ_t, flag]` → logit final → sigmoide.
+
+## 9. Contrastive Loss (Chopra et al. 2005)
 
 **Formula (eq. 2 del paper):**
 
 ```
-L_con(e1, e2, y) = (1-y) · (d²/2)  +  y · (max(0, m-d)²/2)
+L_con(e1, e2, y) = (1-y) · d²/2  +  y · max(0, m - d)² / 2
 ```
 
-donde `d = ||e1 - e2||₂` y `m = 1.5`.
+donde `d = ‖e1 - e2‖₂` (distancia Euclidiana entre los dos embeddings).
 
-**Desglose:**
-- `e1, e2` = embeddings de los dos QRs del par (vectores de 128 numeros cada uno)
-- `d` = distancia euclidiana entre los embeddings = √(Σ (e1_i - e2_i)²)
-- `y = 0` si ambos QRs son de la MISMA clase (ambos benignos o ambos phishing)
-- `y = 1` si son de CLASES DIFERENTES
-- `m = 1.5` = margin (distancia minima que queremos entre clases diferentes)
+**Que dice:**
 
-**Comportamiento:**
+- Si `y=0` (mismo clase): minimiza `d²/2` → empuja los embeddings a estar cerca.
+- Si `y=1` (clases distintas): minimiza `max(0, m-d)²/2` → si la distancia ya supera `m`, no penaliza; si no, empuja a separar hasta llegar a `m`.
 
-| Caso | y | Loss activa | Efecto |
-|------|---|-------------|--------|
-| Misma clase (y=0) | 0 | L = d²/2 | Penaliza si estan lejos → los acerca |
-| Clases distintas, cerca (y=1, d<m) | 1 | L = (m-d)²/2 | Penaliza si estan cerca → los aleja |
-| Clases distintas, lejos (y=1, d≥m) | 1 | L = 0 | Ya estan bastante lejos → no hace nada |
+**Por que el margen `m=1.5`:** grid search sobre `{0.5, 1.0, 1.5, 2.0, 2.5}`. Margenes menores produjeron underfitting (clases no se separan lo suficiente). Margenes mayores no mejoraron el AUC final.
 
-**Por que el margin `m = 1.5`:**
-- Con `m` muy pequeño (ej. 0.5), el modelo "se contenta" demasiado rapido. Resultado v2 con m=1: underfitting.
-- Con `m` muy grande (ej. 3.0), el modelo intenta separar imposiblemente y no converge.
-- `m = 1.5` es el sweet spot empirico (validado en ablation).
+**Resultado en el espacio aprendido:** ratio inter/intra-clase de **1.94**. Los pares benigno-phishing estan al doble de distancia que los pares de la misma clase. El contrastive learning hizo lo que tenia que hacer.
 
-**Defensa:** "El margin se selecciono via hyperparameter search sobre {0.5, 1.0, 1.5, 2.0, 2.5}. 1.5 maximizo validacion AUC."
-
-**Ejemplo numerico:**
-```
-Dos QRs benignos:
-  e1 = [0.1, 0.2, ..., 0.3]
-  e2 = [0.11, 0.19, ..., 0.28]
-  d = 0.15 (muy cerca)
-  y = 0 (misma clase)
-  L = (1-0) · (0.15²/2) = 0.01125  ← bajo, todo bien
-
-Un benigno y un phishing:
-  e1 = [0.1, 0.2, ..., 0.3]
-  e2 = [-0.4, 0.5, ..., -0.1]
-  d = 1.3
-  y = 1 (distintas clases)
-  L = 1 · max(0, 1.5 - 1.3)² / 2 = 0.04/2 = 0.02  ← pequeño, pero el modelo los quiere MAS lejos (hasta 1.5)
-```
-
-## 8. Focal Loss (Lin et al. 2017) — Phase 2
+## 10. Focal Loss (Lin et al. 2017) — Phase 2 visual
 
 **Formula (eq. 3 del paper):**
 
@@ -146,203 +151,104 @@ Un benigno y un phishing:
 L_focal(p, y) = -α_y · (1 - p_y)^γ · log(p_y)
 ```
 
-**Desglose:**
-- `p` = probabilidad predicha por el modelo (0 a 1)
-- `y` = etiqueta real (0 o 1)
-- `p_y` = probabilidad de la CLASE CORRECTA:
-  - Si y=1 (phishing real), `p_y = p` (probabilidad de phishing)
-  - Si y=0 (benigno real), `p_y = 1-p` (probabilidad de benigno)
-- `α_y` = peso de la clase. En nuestro caso `α = 0.5` (balanceado, las clases son ~equal size)
-- `γ = 2` = factor de focalizacion
+**Que dice:**
 
-**Por que Focal Loss en vez de Binary Cross-Entropy (BCE):**
+- `p_y` es la probabilidad predicha de la clase verdadera
+- `α_y = 0.5` para ambas clases (estan balanceadas despues del muestreo)
+- `γ = 2` es el exponente de focusing
 
-BCE estandar es: `L_bce = -log(p_y)`. Trata por igual a todos los ejemplos.
+**Por que `(1-p_y)^γ`:** este factor reduce el peso de los ejemplos faciles (`p_y` cercano a 1) y aumenta el de los dificiles (`p_y` chico). El modelo se concentra en los samples que actualmente clasifica mal.
 
-Focal Loss multiplica BCE por `(1 - p_y)^γ`:
-- Si el modelo YA predice bien un ejemplo (p_y cerca de 1), este factor es cerca de 0 → loss pequeña → no se enfoca en ese ejemplo.
-- Si el modelo predice MAL un ejemplo (p_y cerca de 0), el factor es cerca de 1 → loss grande → se enfoca en corregir ese error.
+**Por que es critica en seguridad:** un FN expone al usuario al ataque; un FP solo dispara una advertencia. La asimetria de costo es exactamente lo que focal loss optimiza. Empiricamente, reemplazar focal por BCE estandar mantiene el AUC pero sube el FNR de 0.20 a 0.27 (visual). Es decir: `(1-p_y)^γ` traduce a una reduccion de 7 pp en FNR.
 
-**Resultado practico:** Focal Loss penaliza mas los ejemplos dificiles. En nuestro contexto, los phishing "dificiles" (que el modelo tiende a clasificar como benignos) reciben mas atencion → **baja el False Negative Rate**.
+## 11. Fusion: combinacion lineal aprendida sobre logits
 
-**Evidencia experimental (Ablation A3 vs A1):**
-- Con BCE: FNR = 0.27 (27% phishing se escapan)
-- Con Focal: FNR = 0.17 (17% phishing se escapan)
-- Reduccion: **10 puntos porcentuales**
+**Arquitectura:** MLP de 3 → 16 → 1 (161 parametros). Recibe `[ℓ_v, ℓ_t, f]` donde `f ∈ {0,1}` es el flag undecodable.
 
-**Por que γ=2:** Lin et al. proponen γ ∈ [0, 5]. γ=2 es su recomendacion default y funciona bien en nuestro caso.
+**Por que tan chiquita:** el rol del fusion es solo aprender la calibracion relativa entre dos logits que ya capturan las features. No tiene que aprender features visuales o textuales — esas ya estan en los logits. Con 161 parametros y 80,000 ejemplos de entrenamiento, el ratio params/samples es muy favorable y no hay riesgo de overfitting.
 
-**Defensa:** "Focal loss con γ=2 es estandar (Lin et al. 2017 para object detection). En ciberseguridad el costo de un falso negativo es asimetricamente alto comparado con un falso positivo — esto justifica penalizar mas los errores dificiles."
+**Por que entrenar sobre features cacheadas:** en lugar de pasar imagenes y texto por las ramas en cada batch, precomputamos los logits una vez sobre todo el corpus. La fusion entrena en <1 minuto sobre features cacheadas, contra varios minutos por epoch si pasaramos los inputs originales.
 
-## 9. Normalizacion L2 de embeddings
-
-En `MobileNetV2Embedding.forward()`:
-```python
-return F.normalize(x, p=2, dim=1)
-```
+## 12. Normalizacion L2 de embeddings
 
 **Formula:**
+
 ```
-e_normalized = e / ||e||₂
-```
-
-donde `||e||₂ = √(Σ e_i²)`.
-
-**Efecto:** cada embedding queda en la esfera unitaria (norma = 1).
-
-**Por que:**
-- Sin normalizar, dos embeddings pueden estar "lejos" solo porque sus magnitudes son distintas, no porque sean semanticamente diferentes.
-- Con normalizacion, la distancia euclidiana se vuelve equivalente a la similaridad coseno (hasta un factor constante).
-- Esto estabiliza el contrastive training.
-
-**Defensa:** "La L2 normalization en el espacio de embeddings es estandar en metric learning (Wang & Gupta 2015, Schroff et al. 2015 FaceNet)."
-
-## 10. Grad-CAM (Selvaraju et al. 2017)
-
-**Formula conceptual:**
-```
-L_Grad-CAM = ReLU(Σ_k α_k · A^k)
+e_norm = e / ‖e‖₂
 ```
 
-donde:
-- `A^k` = k-esimo feature map de la ultima capa convolucional
-- `α_k = (1/Z) Σ_i Σ_j ∂y / ∂A^k_{ij}` = peso del k-esimo feature map, que es el gradiente promedio del logit `y` respecto a `A^k`
+**Por que se hace:** despues de la proyeccion lineal en el backbone, el embedding tendria magnitud arbitraria. Normalizar a la hipersfera unidad asegura que la distancia Euclidiana refleje solo la direccion (que es lo que codifica la similitud semantica). Sin esto, la contrastive loss se "engaña" empujando magnitudes en lugar de direcciones.
 
-**Como funciona en simple:**
+## 13. Grad-CAM (Selvaraju et al. 2017)
 
-1. Pasamos una imagen por el modelo → obtenemos logit `y`.
-2. Calculamos gradientes de `y` con respecto a los feature maps de la ultima capa conv.
-3. Promediamos esos gradientes espacialmente para obtener un peso por feature map.
-4. Combinamos todos los feature maps pesados → mapa de activacion.
-5. Aplicamos ReLU (solo queremos activaciones positivas, las que contribuyeron a predecir la clase).
-6. Redimensionamos a 224×224 para overlay con la imagen original.
+**Formula (conceptual):**
 
-**Por que Grad-CAM:**
-- Es class-discriminative (muestra WHERE for THIS class, no solo activaciones generales).
-- No modifica la arquitectura (no hay que re-entrenar).
-- Es el standard XAI para CNNs.
-
-**Defensa:** "Grad-CAM es el metodo canonico de visualizacion de atencion en CNNs (Selvaraju et al. ICCV 2017, 10K+ citations). Permite verificar que el modelo atiende zonas estructuralmente sensatas."
-
-## 11. SHAP (Lundberg & Lee 2017)
-
-**Concepto en simple:**
-
-Para cada prediccion, SHAP asigna a cada feature (en nuestro caso, cada una de las 128 dimensiones del embedding) un valor `φ_i` que indica cuanto contribuyo esa dimension a empujar la prediccion hacia "phishing" o hacia "benigno".
-
-**Formula conceptual de Shapley values:**
 ```
-φ_i = Σ_{S ⊆ N \ {i}}  [|S|! · (n-|S|-1)! / n!] · [v(S ∪ {i}) - v(S)]
+α^c_k = (1/Z) · Σ_{i,j} ∂y^c / ∂A^k_{ij}
+L^c_GradCAM = ReLU( Σ_k α^c_k · A^k )
 ```
 
-donde:
-- `N` = conjunto de todas las features (128 dims)
-- `S` = subconjunto de features sin la feature `i`
-- `v(S)` = prediccion del modelo si solo se usan las features en `S`
-- El sumatorio promedia las contribuciones de `i` sobre todas las coaliciones posibles de features
+**Que dice:** `A^k` es el k-esimo feature map de la ultima capa convolucional. `α^c_k` es el peso de ese feature map para la clase `c`. La activacion final es la combinacion ponderada (con ReLU para enfatizar lo positivo).
 
-**Interpretacion intuitiva:** es el valor que aporta esa feature en promedio sobre todas las formas posibles de combinarla con las otras.
+**Por que la ultima capa conv:** es donde la informacion espacial todavia existe pero el modelo ya integro semantica de alto nivel. Antes de la capa final esta puramente espacial; despues del global pooling se pierde la posicion.
 
-**Kernel SHAP (lo que usamos):**
-Dado que computar Shapley values exactos es exponencial (2^128 coaliciones), SHAP los aproxima via un problema de regresion ponderada.
-
-**Por que usamos SHAP:**
-- Es model-agnostic (funciona con cualquier modelo)
-- Tiene axiomas teoricos solidos (symmetry, efficiency, null player)
-- Nos permite identificar dimensiones redundantes (las 108 con |SHAP| ≈ 0)
-
-**Defensa:** "SHAP combina game theory con ML explainability (Lundberg & Lee NeurIPS 2017). Es el metodo preferido para feature attribution porque satisface axiomas de consistencia que otros metodos no garantizan."
-
-## 12. Cohen's d — Statistical effect size
-
-Usado en la Table II del paper (analisis estadistico).
-
-**Formula:**
-```
-d = (μ_phishing - μ_benign) / σ_pooled
-```
-
-donde `σ_pooled = √((σ²_phishing + σ²_benign) / 2)`.
-
-**Interpretacion:**
-- `|d| < 0.2`: efecto despreciable
-- `|d| ≈ 0.2`: efecto pequeño
-- `|d| ≈ 0.5`: efecto medio
-- `|d| ≈ 0.8`: efecto grande
-
-Nuestro ejemplo: H-transitions tiene `d = -0.76` = efecto medio-grande.
-
-**Por que Cohen's d en vez de solo p-values:**
-- Con 21,998 muestras, CUALQUIER diferencia es estadisticamente significativa (p < 0.0001). Eso no dice nada util.
-- Cohen's d mide la MAGNITUD practica del efecto, independiente del tamaño de muestra.
-
-**Defensa:** "Reportamos Cohen's d siguiendo recomendaciones APA (American Statistical Association 2016 statement on p-values) que llama explicitamente a NO reportar solo p-values sino tambien effect sizes."
+**Que vimos en Q-Shield:** el modelo atiende zonas de datos (no finder patterns), y los mapas agregados por clase muestran asimetria izquierda-derecha. La correlacion de los mapas-diferencia entre datasets es r=0.43 — la señal estructural es real, no dataset-specific.
 
 ---
 
 # PARTE III — PRACTICA: EXPERIMENTOS Y NUMEROS
 
-## 13. Datasets
+## 14. Datasets
 
-| Dataset | Fuente | Tamaño | Tipo |
-|---------|--------|--------|------|
-| Trad et al. (2025) | arxiv:2505.03451 | 9,987 muestras | Matrices binarias 69×69 |
-| CIC Trap4Phish 2025 | Canadian Institute for Cybersecurity | 1M+ muestras | PNGs variables |
+**Trad et al. 2025:** 9,987 matrices binarias 69x69 (50% benigno / 50% phishing). QR version 13, EC `low`. URLs benignas de Alexa top-1M; maliciosas de PhishTank.
 
-**Total validacion combinado:** 21,998 muestras (el benchmark mas grande en quishing literature).
+**CIC Trap4Phish 2025:** ~1M QRs PNG variados (resoluciones 114-582 px, versiones 5-30). Submuestreamos 50,000 por clase para tractabilidad.
 
-## 14. Experimento principal (Table III del paper)
+**Splits:** 80/20 train/val con seed 42, estratificado por clase. Set de validacion combinado: **21,998 muestras** (1,998 Trad + 20,000 CIC). Esto es 11x mas grande que la evaluacion mas grande previa.
 
-| Metodo | AUC | F1 | FNR |
-|--------|-----|-----|-----|
-| Random Forest + 25 features manuales | 0.813 | 0.720 | 0.340 |
-| Trad et al. (SOTA previo, 1,998 val samples) | 0.9133 | 0.89 | - |
-| Q-Shield single seed (21,998 val) | 0.8962 | 0.8207 | 0.2017 |
-| Q-Shield single seed + TTA | 0.9053 | 0.8250 | 0.2009 |
-| **Q-Shield ensemble + TTA (21,998 val)** | **0.9146** | **0.8346** | **0.1993** |
+**Decodificacion offline (para la rama de texto):** pyzbar sobre cada imagen. Implementamos un cascade para Trad (multiple polaridades, paddings, escalas) que da 100% de exito sobre matrices binarias 69x69. CIC tiene 4.3% de tasa de fallo total. El URL-cache se guarda en JSON en Drive y es idempotente.
 
-**Como se mide AUC:**
-- AUC = Area Under the ROC Curve.
-- ROC = curva que grafica True Positive Rate vs False Positive Rate a distintos thresholds.
-- AUC 1.0 = perfecto. AUC 0.5 = aleatorio. AUC 0.9146 = excelente.
+## 15. Resultado headline (Table III del paper)
 
-**Como se mide F1:**
-- F1 = 2 · (precision · recall) / (precision + recall)
-- Precision = de los que prediji como phishing, cuantos lo eran
-- Recall = de los phishing reales, cuantos detecte
+| Configuracion | AUC | Prec | Recall | F1 | FNR | Brier | ECE |
+|---|---|---|---|---|---|---|---|
+| Trad et al. (reportado, n=1,998) | 0.9133 | — | — | 0.890 | — | — | — |
+| Q-Shield visual single seed | 0.8962 | 0.844 | 0.798 | 0.821 | 0.202 | 0.146 | 0.133 |
+| Q-Shield visual ensemble + TTA | 0.9146 | 0.872 | 0.801 | 0.835 | 0.199 | — | — |
+| Q-Shield text-only (DistilBERT) | 0.9592 | 0.923 | 0.931 | 0.927 | 0.069 | 0.066 | 0.045 |
+| **Q-Shield fusion (visual+text)** | **0.9749** | **0.928** | **0.943** | **0.936** | **0.057** | **0.054** | **0.038** |
 
-**Como se mide FNR:**
-- FNR = FN / (FN + TP) = 1 - recall
-- 0.1993 = de cada 100 phishing reales, 20 se escapan
+**Como se mide AUC:** Area Under the ROC Curve. AUC 1.0 = perfecto, AUC 0.5 = aleatorio, AUC 0.9749 = excelente.
 
-## 15. Ablation Study (Table V — single seed, sin TTA)
+**Como se mide F1:** `F1 = 2·(precision·recall)/(precision+recall)`. Combina precision y recall en un solo numero.
 
-Quitamos de a una cada decision para medir su contribucion sobre el modelo single-seed:
+**Como se mide FNR:** `FNR = FN/(FN+TP) = 1 - recall`. FNR 0.057 = de cada 100 phishing reales, 5.7 se escapan. Cumple la tolerancia conservadora ≤10%.
+
+**Comparacion con Trad:** **+6.16 pp AUC** sobre un benchmark **11x mas grande** y heterogeneo.
+
+## 16. Ablation Study — visual single-seed (Table V panel a)
+
+Quitamos de a una cada decision arquitectonica del visual:
 
 | Variante | AUC | Δ AUC | FNR | Δ FNR |
 |----------|-----|-------|-----|-------|
 | A1: Full Q-Shield (single seed) | 0.8962 | baseline | 0.2017 | baseline |
-| A2: Sin Siamese pretraining | 0.8764 | -0.020 | 0.2670 | +6.5pp |
-| A3: BCE (sin focal) | 0.8771 | -0.019 | 0.2705 | +6.9pp |
-| A4: Sin frozen start | 0.8810 | -0.015 | 0.2298 | +2.8pp |
-| A5: Head pequeño | 0.8752 | -0.021 | 0.2290 | +2.7pp |
+| A2: Sin Siamese pretraining | 0.8764 | -0.020 | 0.2670 | +6.5 pp |
+| A3: BCE (sin focal) | 0.8771 | -0.019 | 0.2705 | +6.9 pp |
+| A4: Sin frozen start | 0.8810 | -0.015 | 0.2298 | +2.8 pp |
+| A5: Head pequeño | 0.8752 | -0.021 | 0.2290 | +2.7 pp |
 
-**Refinamientos en inference (acumulativos):**
+**Refinamientos en inferencia (Table V panel b — cumulativos sobre visual):**
 
 | Variante | AUC | Δ AUC vs single seed |
-|----------|-----|----------------------|
+|----------|-----|---------------------|
 | B0: Single seed | 0.8962 | baseline |
-| B1: + TTA (H-flip avg) | 0.9053 | +0.009 |
-| **B2: + Ensemble 2 seeds** | **0.9146** | **+0.018** |
+| B1: + TTA (h-flip avg) | 0.9053 | +0.009 |
+| B2: + 2-seed ensemble | 0.9146 | +0.018 |
 
-**Traduccion experimental:**
-- **A2 vs A1:** el Siamese pretraining contribuye 2 puntos de AUC
-- **A3 vs A1:** Focal loss reduce FNR en 6.9pp (gran impacto aunque AUC apenas cambie)
-- **B2 vs B0:** TTA + Ensemble agregan 1.84 pp sin re-entrenar la arquitectura — suficiente para superar a Trad
+**La fusion multimodal (no parte del ablation visual) suma +0.060 sobre B2.** Es por mucho la palanca de mayor impacto del proyecto.
 
-**Defensa del ablation:** "Cada componente arquitectonico tiene evidencia empirica de contribucion. Los refinamientos de inferencia (TTA y ensemble) producen el resultado headline sin tocar el diseño base."
-
-## 16. Cross-Dataset Generalization (Table IV — single seed)
+## 17. Cross-Dataset Generalization (Table V panel c — single seed)
 
 | Setup | AUC | F1 | FNR |
 |-------|-----|-----|-----|
@@ -351,175 +257,197 @@ Quitamos de a una cada decision para medir su contribucion sobre el modelo singl
 | CV3: Train Combined → Test Combined | 0.8962 | 0.8207 | 0.2017 |
 
 **Interpretacion:**
-- **CV1 (AUC 0.72, FNR 0):** El modelo entrenado solo en CIC cuando ve Trad "colapsa" — predice TODO como phishing (por eso FNR=0, recall=100%, pero precision baja). AUC 0.72 indica que AUN asi tiene cierta discriminacion.
-- **CV2 (AUC 0.52):** Modelo entrenado en Trad (69×69 binarios) NO puede procesar PNG de variable resolucion → practicamente random.
-- **CV3 (AUC 0.8962):** Al entrenar combinado, el modelo aprende features invariantes a resolucion.
 
-**Insight clave:** Ningun dataset SOLO es suficiente. El entrenamiento combinado es una contribucion metodologica, no solo conveniencia.
+- **CV1 (AUC 0.72, FNR 0):** El modelo entrenado solo en CIC se colapsa cuando ve Trad: predice todo como phishing.
+- **CV2 (AUC 0.52):** Modelo entrenado en Trad (69x69 binarios) no procesa PNGs de variable resolucion → practicamente random.
+- **CV3 (AUC 0.8962):** Combinado funciona porque el modelo ve ambas distribuciones.
 
-## 17. XAI findings
+**Insight metodologico:** ningun dataset solo es suficiente. El entrenamiento combinado no es conveniencia, es requisito. Citamos a Ganin & Lempitsky 2015 (DANN) en el paper.
+
+## 18. XAI findings
 
 **Grad-CAM:**
-- Finder patterns (esquinas): atencion BAJA → modelo los ignora correctamente
-- Data region (centro): atencion ALTA → modelo atiende lo que realmente discrimina
-- Benignos: atencion izquierda. Phishing: atencion centro-derecha.
 
-**Embedding distance analysis (Table VI):**
-```
-Benign-Benign:   μ = 0.501
-Phish-Phish:     μ = 0.458  (mas compacto)
-Benign-Phish:    μ = 0.928
+- Finder patterns (esquinas): atencion baja → modelo los ignora correctamente.
+- Zonas de datos: atencion alta → modelo aprende donde mirar.
+- Agregado: benignos atienden a la izquierda, phishing al centro-derecha (URLs phishing son mas largas, empujan codewords hacia la derecha).
 
-Separation ratio: 1.94 (inter / intra)
-```
+**Per-dataset Grad-CAM:** correlacion r=0.43 entre los mapas-diferencia de Trad y CIC. Patron parcialmente compartido (no es solo del dataset) y parcialmente especifico (la resolucion afecta el detalle).
 
-Los embeddings inter-class estan **~2x mas lejanos** que intra-class.
+**SHAP:** top-20 dimensiones del embedding 128-d concentran la mayoria de la señal. Las 108 restantes contribuyen poco. El embedding esta sobre-parametrizado y se podria podar a 32-64 dim sin perder rendimiento.
 
-**SHAP analysis:**
-- Top-20 de 128 dimensiones concentran la señal (mean |SHAP| ≈ 0.005 a 0.016)
-- Las 108 restantes: |SHAP| ≈ 0
-- Implicacion: el embedding esta sobre-parametrizado → pruning a 32-64 dims posible
+**Embedding distances:**
+- Benigno-Benigno: 0.501
+- Phishing-Phishing: 0.458 (phishing mas compacto que benigno)
+- Benigno-Phishing: 0.928
+- **Separation ratio inter/intra: 1.94**
+
+**Calibracion del fusion:** Brier 0.054, ECE 0.038. Mejora 3x sobre el visual solo (Brier 0.146, ECE 0.133). El fusion no es solo mejor ranker, es mejor estimador probabilistico — relevante para deployments que necesitan probabilidades calibradas.
+
+## 19. Per-resolution analysis del visual (Table VIII)
+
+| Bucket | Tamaño (px) | n | AUC | F1 | FNR |
+|--------|-------------|---|-----|-----|-----|
+| Small | 114-198 | 1,561 | 0.940 | 0.885 | 0.132 |
+| Medium-small | 222 | 1,446 | 0.928 | 0.860 | 0.214 |
+| Large | 246-582 | 993 | 0.844 | 0.739 | 0.311 |
+
+**Observacion:** AUC cae monotonicamente con el tamaño. QRs grandes pierden detalle de modulo cuando se redimensionan a 224x224. Multi-scale training es future work explicito.
 
 ---
 
 # PARTE IV — VALIDACION Y JUSTIFICACION
 
-## 18. ¿Como validamos cada claim del paper?
+## 20. ¿Como validamos cada claim del paper?
 
-**Claim 1: "Q-Shield supera el SOTA previo"**
-- Evidencia: Table III. AUC 0.9146 (ensemble + TTA) vs Trad 0.9133 = +0.13 pp en un benchmark 11x mas grande
-- Condicion: sobre 21,998 muestras (benchmark 10x mas grande)
-- Reproducible: notebook 06 + 07 con seed 42
+**Claim 1: "Pivote multimodal supera al SOTA visual"**
+- Evidencia: Table V multimodal. Fusion AUC 0.9749 vs Trad 0.9133 = +6.16 pp.
+- Reproducible: notebook 10.
 
-**Claim 2: "El enfoque de no decodificacion es viable"**
-- Evidencia: el pipeline nunca invoca un decoder (zbar, pyzbar, etc.)
-- Codigo publico demuestra que `classifier(x)` solo toma pixels, nunca string URL
+**Claim 2: "El fusion gana al text alone"**
+- Evidencia: AUC 0.9749 (fusion) vs 0.9592 (text). +1.57 pp AUC.
+- Reproducible: notebook 10. La fusion explota el caso UNDECODABLE.
 
-**Claim 3: "Siamese pretraining es critico"**
-- Evidencia: Ablation A2. Sin pretraining: AUC 0.8764 (-4.9pp)
-- Reproducible: notebook 08 variant A2
+**Claim 3: "FNR 0.057 cumple tolerancia ≤10% sin calibracion"**
+- Evidencia: eval_multimodal.json. FNR 0.0567 a threshold 0.5.
+- Implicacion: threshold calibration deja de ser load-bearing claim.
 
-**Claim 4: "Focal Loss reduce false negatives"**
-- Evidencia: Ablation A3. Sin focal: FNR 0.27 vs 0.17 (+10pp)
-- Reproducible: notebook 08 variant A3
+**Claim 4: "Calibracion 3x mejor que visual"**
+- Evidencia: Brier 0.054 (fusion) vs 0.146 (visual), ECE 0.038 vs 0.133.
 
-**Claim 5: "Combined training es necesario"**
-- Evidencia: Cross-dataset Table IV. Single-dataset → random/collapse.
-- Reproducible: notebook 08 CV1 y CV2
+**Claim 5: "Visual branch es fallback graceful"**
+- Evidencia: Trad decode rate 100%, CIC 95.7%. El visual sigue activo en el ~4.3% de casos UNDECODABLE.
 
-**Claim 6: "Embeddings discriminativos"**
-- Evidencia: separation ratio 1.94
-- Reproducible: notebook 07 embedding analysis
+**Claim 6: "Cross-dataset analysis valida el entrenamiento combinado"**
+- Evidencia: Table V panel c (CV1, CV2, CV3). Single-corpus se colapsa.
 
-**Claim 7: "Modelo explicable"**
-- Evidencia: Fig 5-8 (Grad-CAM + SHAP)
-- Reproducible: notebook 07
+**Claim 7: "Modelo explicable a dos niveles"**
+- Evidencia: Fig 5-8 (Grad-CAM + SHAP).
 
 **Claim 8: "Mobile-deployable"**
-- Evidencia: 3.08M parametros = ~12 MB fp32, ~3 MB quantized int8
-- Comparacion: Trad 4,761 pixel features + tree ensemble tambien es compacto, pero nuestro approach es mas flexible
+- Evidencia: visual single 3.08M params (12 MB), fusion 69M params (267 MB con DistilBERT). CPU latency ~25ms (visual solo) o ~95ms (fusion).
 
-## 19. Hiperparametros — por que los elegimos
+## 21. Hiperparametros — por que los elegimos
 
 | Hyperparam | Valor | Por que |
 |-----------|-------|---------|
-| Embedding dim | 128 | Standard en metric learning (ResNet-50 features son 2048, MobileNet 1280). 128 balanza capacidad vs cost. |
-| Margin (contrastive) | 1.5 | Grid search {0.5, 1.0, 1.5, 2.0, 2.5}. Ver ablation v2 (m=1.0 underfit). |
-| Dropout | 0.35 | Grid search {0.3, 0.4, 0.5}. v1 con 0.3 overfit, v2 con 0.5 underfit, 0.35 sweet spot. |
+| Embedding dim (visual) | 128 | Standard en metric learning. SHAP confirma sobre-parametrizacion → poda futura posible. |
+| Margin (contrastive) | 1.5 | Grid search {0.5, 1.0, 1.5, 2.0, 2.5}. Menores underfit. |
+| Dropout (visual) | 0.35 | Grid search {0.3, 0.4, 0.5}. v1 (0.3) overfit, v2 (0.5) underfit. |
 | Weight decay | 2e-4 | Standard para ImageNet fine-tuning. |
-| LR Phase 1 | 2e-4 | AdamW default × 2. |
-| LR Phase 2 | 1e-4 | Menor que Phase 1 para no destruir embeddings pretrained. |
-| Epochs Phase 1 | 40 max con early stop | Warm restarts cada 15 permiten escapar plateaus. |
-| Epochs Phase 2 | 20 max con early stop | Tipico para fine-tuning. |
-| Batch size | 128 (A100), auto-scaled | Balance memory vs estabilidad estadistica. |
+| LR Phase 1 | 2e-4 | AdamW con cosine warm restarts. |
+| LR Phase 2 (frozen) | 5e-4 | Mas alto porque solo entrena la cabeza. |
+| LR Phase 2 (unfrozen) | 1e-4 | Menor para no destruir embeddings preentrenados. |
+| Epochs Phase 1 | 40 max + early stop 8 | Warm restarts cada 15 permiten escapar plateaus. |
+| Epochs Phase 2 | 20 (5 frozen + 15 unfrozen) | Tipico para fine-tuning. |
+| Frozen epochs | 5 | Ablation A4 justifica empiricamente. |
 | Focal α | 0.5 | Clases balanceadas → α=0.5. |
 | Focal γ | 2.0 | Standard (Lin et al. 2017). |
-| Frozen epochs | 5 | Ablation A4 justifica empiricamente. |
-| Data augmentation | Solo H-flip | QR tienen orientacion semantica → no rotar. Justificado en seccion 4.3. |
+| Batch size visual | 128 (A100) / 64 (T4) | Memory vs estabilidad estadistica. |
+| Data augmentation | Solo H-flip | QR tienen orientacion semantica → no rotar. |
+| Text model | DistilBERT 66M | Trade-off latencia/accuracy. ModernBERT como alternativa. |
+| Text max_length | 96 tokens | Cubre la distribucion de URLs en ambos corpus. |
+| Text epochs | 3 | Suficiente para convergencia con focal loss. |
+| Text LR | 2e-5 | Standard para fine-tune de transformers. |
+| Fusion hidden | 16 | 3→16→1 = 161 params. Suficiente para calibrar 2 logits. |
+| Fusion LR | 1e-3 | Mayor porque la fusion es mas chica. |
+| Fusion epochs | 20 | Convergencia en <1 min sobre features cacheadas. |
 
-## 20. Defensa contra criticas comunes
+## 22. Defensa contra criticas comunes
 
-**Critica 1: "¿Por que no usan ResNet en vez de MobileNet?"**
-- Respuesta: Mobile deployability es uno de nuestros objetivos. ResNet-50 tiene 25.6M params vs MobileNet 3.08M (10x menos). El AUC delta en esta tarea es marginal (~0.5pp) segun nuestros pilotos.
+**Critica 1: "¿Por que no SimCLR?"**
 
-**Critica 2: "¿Por que contrastive loss en vez de triplet loss?"**
-- Respuesta: Contrastive es mas simple (pares vs triplets), converge mas rapido, y nuestros resultados muestran separation ratio 1.94 — suficiente. Triplet es future work.
+Lo que hacemos en Phase 1 visual es **supervised contrastive** (Chopra 2005 / Khosla 2020 SupCon), no self-supervised. Usamos las etiquetas para formar pares. SimCLR seria self-supervised y queda como future work.
 
-**Critica 3: "La FNR de 0.166 es alta para un sistema de seguridad"**
-- Respuesta: Cierto. Mitigacion propuesta: threshold calibration (bajar de 0.5 a 0.35) + ensemble de 3 modelos. Esto puede bajar FNR a ~0.08 sacrificando algo de precision. Future work.
+**Critica 2: "+6 pp es estadisticamente significativo?"**
 
-**Critica 4: "¿Por que AUC y no accuracy?"**
-- Respuesta: Accuracy puede ser engañosa en problemas balanceados ligeramente desbalanceados. AUC captura el ranking y es independiente del threshold. Reportamos ambas metricas.
+Trad reporta sobre n=1,998 → IC 95% ≈ ±0.012. Nosotros sobre n=21,998 → IC 95% ≈ ±0.004. La diferencia 6 pp esta muy lejos de los IC superpuestos: es estadisticamente robusta.
 
-**Critica 5: "¿Por que combinar Trad y CIC?"**
-- Respuesta: Cross-dataset analysis (Table IV) muestra que individualmente NO generalizan. Combined training es requisito metodologico.
+**Critica 3: "Decodificar no es lo que ataca el QR?"**
 
-**Critica 6: "¿Como manejan el overfitting?"**
-- Respuesta: Multiple mechanisms:
-  - Dropout 0.35 en projection head
-  - Weight decay 2e-4 via AdamW
-  - Data augmentation (H-flip)
-  - Early stopping con patience=8 en Phase 1
-  - Frozen backbone for first 5 epochs en Phase 2
+Decodificar con pyzbar es local, deterministico, sin red. Confunde leer (string) con abrir (fetch + render). El paper lo aclara explicitamente.
 
-**Critica 7: "¿Han probado en QR codes del mundo real?"**
-- Respuesta: El dataset CIC contiene QRs reales generados de URLs phishing de PhishTank (fuente real). No son sinteticos. Trad es mas controlado pero tambien real en origen.
+**Critica 4: "La FNR 0.057 sigue siendo demasiado alta?"**
 
-**Critica 8: "¿Que pasa con adversarial attacks?"**
-- Respuesta: Limitacion conocida. No evaluamos contra perturbaciones dirigidas de modulos. Es future work explicito.
+Cumple la tolerancia conservadora ≤10% en seguridad. Para deployments con tolerancias mas estrictas, sliding del threshold a 0.4 baja el FNR del visual fallback a 0.098. Future work: cost-sensitive fine-tuning.
+
+**Critica 5: "Text branch domina, ¿el visual aporta algo?"**
+
+Si: AUC 0.9749 (fusion) vs 0.9592 (text). +1.57 pp. La fusion explota el caso UNDECODABLE (4.3% del corpus) donde solo el visual esta disponible.
+
+**Critica 6: "¿Por que no ResNet o ViT?"**
+
+Mobile deployability. ResNet-50 son 25M params, ViTs igual o mas. Visual de Q-Shield son 3M params. Para escanear QRs en moviles, eso importa.
+
+**Critica 7: "¿Por que combinar Trad y CIC?"**
+
+Cross-dataset analysis (Table V panel c) muestra que individualmente NO generalizan. Combined training es requisito metodologico, no conveniencia.
+
+**Critica 8: "Quedan limitaciones?"**
+
+Si — siete reportadas en Section VI.B: FNR del fallback visual, overfitting Phase 2 visual, URL overlap no verificado, accuracy en QRs grandes, calibracion del visual, scope unimodal del contexto que rodea (email subject, sender), container-format, robustez adversarial.
 
 ---
 
 # PARTE V — CHEAT SHEET PARA DEFENDER EL PAPER
 
-## 21. Respuestas rapidas a preguntas esperadas
+## 23. Respuestas rapidas a preguntas esperadas
 
 **"¿Cual es la contribucion principal?"**
-> Primer aplicacion de Siamese contrastive learning a quishing. Superamos el SOTA previo en un benchmark 11x mas grande (AUC 0.9146 ensemble vs 0.9133, 21,998 vs 1,998 muestras).
 
-**"¿Por que Siamese y no un CNN normal?"**
-> Siamese aprende distancias (metric learning), que generaliza mejor con datos limitados. Ablation (A2) muestra que quitar el pretraining pierde 4.9 AUC pts.
+> Primer framework multimodal end-to-end para quishing que fusiona la rama visual Siamese con la rama URL DistilBERT, con manejo explicito del caso UNDECODABLE. Supera el SOTA visual (Trad 0.9133) en +6.16 pp AUC en un benchmark 11x mas grande, y alcanza FNR 0.057 al threshold default — cumple la tolerancia de seguridad sin calibracion.
+
+**"¿Por que multimodal y no visual-only?"**
+
+> Tres razones. La señal visual sola es estructuralmente debil en QRs heterogeneos (CIC SSIM 0.34, F1 0.88). La señal URL es fuerte pero requiere decodificar — y la decodificacion offline con pyzbar no carga el riesgo del browser-fetch. Combinar ambas con un fusion calibrado domina por construccion (Bountakas 2023, Khalifa 2025) y nos da ademas un fallback graceful para QRs no decodificables.
+
+**"¿Como manejan el caso UNDECODABLE?"**
+
+> Flag binario explicito en el input del fusion. La cabeza aprende automaticamente "cuando flag=1, ignora text logit y usa visual logit". El 4.3% del corpus que no decodifica es atendido por el visual sin perdida cualitativa — el ablation muestra que el fusion gana +1.57 pp sobre text-only precisamente porque cubre ese caso.
+
+**"¿Por que Siamese contrastive en la rama visual?"**
+
+> Siamese aprende un espacio metrico (distancias) en lugar de una frontera de decision directa. Generaliza mejor con datos limitados. Ablation A2 confirma: sin pretraining contrastivo el AUC visual cae 2 pp y el FNR sube 6.5 pp.
 
 **"¿Por que Contrastive Loss y no Triplet?"**
-> Contrastive es mas simple y converge rapido. Triplet es future work. Nuestro separation ratio 1.94 demuestra que contrastive funciona.
 
-**"¿Por que MobileNetV2?"**
-> Edge deployability — objetivo explicito. 3.08M params permiten inferencia movil. Trade-off vs ResNet es marginal (0.5pp AUC) pero 10x el tamaño.
+> Contrastive es mas simple, converge mas rapido. Nuestro separation ratio 1.94 demuestra que es suficiente para esta tarea. Triplet es future work si necesitamos separacion mas agresiva.
+
+**"¿Por que MobileNetV2 y no ResNet?"**
+
+> Edge deployability. ResNet-50 son 25.6M params; MobileNetV2 son 3.08M (10x menos). Diferencia de AUC marginal en esta tarea, pero la diferencia de footprint es decisiva para mobile.
+
+**"¿Por que DistilBERT y no ModernBERT o DeepSeek?"**
+
+> Trade-off latencia/accuracy. DistilBERT es 66M params, ModernBERT 150M+, DeepSeek-R1-Distill 671M+. CIC reporta DeepSeek con F1 0.99 vs DistilBERT 0.96. Para mobile vale la pena el trade-off. Future work: probar ModernBERT como rama text mas grande.
+
+**"¿La FNR de 0.057 es aceptable para production?"**
+
+> Si — cumple la tolerancia conservadora ≤10% que se usa convencionalmente en deteccion de phishing. Para SLAs mas estrictos, threshold sliding a 0.4 baja el FNR del visual fallback a 0.098. La fusion en si esta ya por debajo del target.
 
 **"¿Como justifican el training combinado?"**
-> Cross-dataset (Table IV) muestra que ningun dataset SOLO generaliza. CIC→Trad: collapse. Trad→CIC: random. Combinado (single seed): AUC 0.8962, ensemble: 0.9146.
+
+> Cross-dataset analysis (Table V panel c). CIC-only → Trad: AUC 0.72 con classifier collapse. Trad-only → CIC: AUC 0.52, practicamente random. Combinado: AUC 0.8962 visual / 0.9749 fusion. Single-corpus no funciona; combinar es requisito metodologico.
 
 **"¿Que pasa si el attacker conoce Q-Shield?"**
-> Adversarial robustness es limitacion reconocida. Future work: adversarial training + randomized smoothing.
 
-**"¿Es reproducible?"**
-> Si. Codigo GitHub publico, checkpoints en Drive, datasets publicos (Trad, CIC), notebooks Colab-ready, seed=42 fijado.
+> Adversarial robustness es limitacion explicita en el paper. Future work: adversarial training + randomized smoothing. Mitigacion arquitectonica: la dual-branch hace mas dificil un attack que requiere fooling visual + URL simultaneamente.
 
-**"¿Porque usan Focal Loss?"**
-> En security, los false negatives son mas costosos que false positives. Focal penaliza mas los errores dificiles → FNR baja de 0.27 a 0.17 (ablation A3).
+**"¿Como se compara con CIC Trap4Phish?"**
 
-**"¿Como validan los embeddings son buenos?"**
-> Separation ratio 1.94 (inter/intra). t-SNE visualmente separable. Grad-CAM muestra atencion sensata.
+> CIC text-only F1 0.97-0.99 con LLMs grandes (DeBERTa, ModernBERT, DeepSeek). Q-Shield text-only F1 0.927, fusion F1 0.936. No superamos a CIC en URL pura pero ofrecemos un detector multimodal con manejo explicito del caso UNDECODABLE — algo que CIC no aborda. Con un LLM mas grande cerrariamos la brecha en text-only.
 
-**"¿Cual es el tiempo de inferencia?"**
-> ~50ms por imagen en CPU moderna (Intel i5 8th gen), <10ms en GPU movil (Snapdragon 8 Gen 3). Medido sobre 1000 inferences.
+**"Si el text branch es lo que mas pesa, ¿por que mantienen el visual?"**
 
-**"¿Funciona con QR codes de mi celular?"**
-> Nuestros datos de entrenamiento incluyen QRs de multiple resolucion (CIC). El modelo deberia generalizar a capturas de camara de movil, pero no lo evaluamos explicitamente. Future work.
-
-**"¿Cuanto costo computacional?"**
-> Entrenamiento: ~3 horas en NVIDIA A100 (o ~10 horas en T4). Inferencia: trivially cheap.
-
-**"¿Es mejor que soluciones comerciales?"**
-> Google Safe Browsing / Kaspersky QR scanner requieren decodificar y verificar URL en blacklist. Q-Shield detecta zero-day QRs sin decodificar. Mas seguro pero complementario (se puede combinar).
+> Tres razones. Una: cuando el QR no decodifica, el visual es la unica señal. Dos: el flag UNDECODABLE en el fusion explota esto explicitamente — quitarlo + text-only daria peor performance en ese subset. Tres: el visual aporta interpretabilidad espacial (Grad-CAM) que el text branch no tiene.
 
 ---
 
-## 22. Un parrafo de defensa final (si te preguntan "¿En 30 segundos que hicieron?")
+## 24. Un parrafo de defensa final (si te preguntan "¿En 30 segundos que hicieron?")
 
-> "Desarrollamos Q-Shield, el primer framework de deteccion de quishing basado en Siamese contrastive learning. Operamos directamente sobre la imagen del QR code — sin decodificar su payload — usando un backbone MobileNetV2 con 3.08M parametros, entrenado en dos fases: primero contrastive pretraining sobre pares de imagenes, luego clasificacion supervisada con focal loss. En inferencia aplicamos test-time augmentation con flip horizontal y promediamos las salidas de dos modelos entrenados con seeds distintos (ensemble). Evaluamos sobre 21,998 muestras combinadas de Trad et al. y CIC Trap4Phish 2025, obteniendo AUC 0.9146 con la configuracion ensemble — superando el SOTA previo (0.9133) en un benchmark 11x mas grande y heterogeneo, con la variante single-seed alcanzando AUC 0.8962 a un cuarto del costo de inferencia. Ablation study confirma que cada componente arquitectonico contribuye, y cross-dataset analysis demuestra que el entrenamiento combinado es necesario para generalizar. Grad-CAM y SHAP proveen explicabilidad dual: visual (donde mira el modelo) y feature-level (que dimensiones del embedding importan). El framework es country-agnostic y mobile-deployable, con extensions naturales a multimodal y adversarial robustness."
+> "Desarrollamos Q-Shield, un framework multimodal de deteccion de quishing que fusiona una rama visual Siamese sobre la imagen del QR con una rama transformer (DistilBERT) sobre la URL decodificada offline. La fusion es un MLP pequeño que toma los dos logits mas un flag de undecodable y produce la probabilidad final. Evaluamos sobre 21,998 muestras combinadas de Trad et al. y CIC Trap4Phish 2025 — 11 veces mas grande que la evaluacion mas grande previa. La configuracion fusion alcanza AUC 0.9749, F1 0.936 y FNR 0.057, superando el SOTA visual previo (Trad 0.9133) por +6.16 puntos y cumpliendo la tolerancia de seguridad ≤10% al threshold default sin necesidad de calibracion. La rama visual sola alcanza AUC 0.8962 y permanece como fallback graceful cuando el QR no se puede decodificar. Confirmamos cross-dataset que single-corpus no generaliza — el entrenamiento combinado es requisito metodologico. La explicabilidad es dual: Grad-CAM espacial (validado per-dataset con r=0.43) y SHAP sobre el embedding 128-d. La calibracion del fusion (Brier 0.054, ECE 0.038) es 3x mejor que el visual solo. El framework es mobile-deployable: visual ~25ms en CPU, fusion completa ~100ms — dentro del budget perceptivo movil. Limitaciones explicitas en seven puntos; provenance-aware detection y multi-scale training como direcciones de future work."
 
 ---
 
-*Documento preparado por Nicolas Llerena Silva — Abril 2026*  
-*Para validacion integral y defensa del proyecto Q-Shield*
+*Documento preparado por Nicolas Llerena Silva — Mayo 2026*
+*Validacion integral del proyecto Q-Shield — pivote multimodal*

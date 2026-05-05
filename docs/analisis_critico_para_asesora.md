@@ -1,10 +1,14 @@
 # Analisis Critico — Puntos para discutir con la asesora
 
-**Para:** Reunion Nicolas + Aurea Soriano-Vargas  
-**Fecha:** Abril 2026  
-**Intencion:** Ser riguroso y honesto antes del envio. Anticipar criticas de reviewers.
+**Para:** Reunion Nicolas + Aurea Soriano-Vargas
+**Fecha original:** Abril 2026
+**Status:** PRE-PIVOTE MULTIMODAL. Este documento captura el analisis critico del setup visual-only que reemplazamos en el pivote de Mayo 2026. Las criticas siguen siendo validas para entender la rama visual (que sigue en el paper como fallback graceful), pero ya no son las criticas principales que enfrenta el paper actual.
 
-> **Regla que estoy aplicando aqui:** prefiero identificar yo los problemas (y proponer como defenderlos) antes que un reviewer los descubra y lo use para rechazar el paper.
+> **Para las criticas que enfrenta la version multimodal actual** — incluyendo "decoding paradox", comparacion con CIC text-only F1 0.97-0.99, +6.16 pp es estadisticamente significativo, etc. — consultar `resumen_ejecutivo_general.md` Parte IV (seccion 22 de defensa contra criticas) y `presentacion_guion.md` apendice de Q&A.
+
+**Intencion original:** Ser riguroso y honesto antes del envio. Anticipar criticas de reviewers.
+
+> **Regla que se aplico aqui:** identificar los problemas (y proponer como defenderlos) antes que un reviewer los descubra y lo use para rechazar el paper.
 
 ---
 
