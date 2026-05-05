@@ -1,9 +1,14 @@
-"""Multimodal dataset: yields (image_tensor, url_string, label) tuples.
+"""Multimodal datasets.
 
-The decoded URL is read from a cache built by data.decode.build_cache_for_dataset.
-Samples whose decode failed receive the UNDECODABLE sentinel; the text branch
-embeds that sentinel as a normal token, so "undecodable" itself becomes a
-learnable feature.
+Two flavors:
+  - MultimodalDataset: yields (image, url, label). Used by precompute_logits
+    where both branches need to run.
+  - URLOnlyDataset: yields (zero_tensor, url, label). Used during text-branch
+    fine-tuning where the image is irrelevant. Avoids ~20 minutes of wasted
+    image I/O over 3 epochs of 100k samples.
+
+Both pull the URL from a JSON cache built by data.decode.build_cache_for_dataset.
+Samples whose decode failed get the UNDECODABLE sentinel.
 """
 
 import torch
@@ -15,11 +20,7 @@ from .transforms import array_to_tensor, png_to_tensor
 
 class MultimodalDataset(Dataset):
     def __init__(self, base_dataset, url_cache, augment=False):
-        """base_dataset: a ClassifyDataset with return_index=True semantics.
-
-        We don't subclass ClassifyDataset because we need the URL cache joined
-        in by global ID, but we reuse its `items` list and per-source loaders.
-        """
+        """base_dataset: a ClassifyDataset with return_index=True semantics."""
         self.base = base_dataset
         self.url_cache = url_cache
         self.augment = augment
@@ -43,3 +44,20 @@ class MultimodalDataset(Dataset):
         gid = self.base.global_id(src, idx)
         url = self.url_cache.get(gid, UNDECODABLE)
         return img, url, torch.tensor(float(lbl))
+
+
+class URLOnlyDataset(Dataset):
+    """Skips image loading. The text-training loop ignores the image slot anyway."""
+
+    def __init__(self, base_dataset, url_cache):
+        self.base = base_dataset
+        self.url_cache = url_cache
+
+    def __len__(self):
+        return len(self.base)
+
+    def __getitem__(self, i):
+        src, idx, lbl = self.base.items[i]
+        gid = self.base.global_id(src, idx)
+        url = self.url_cache.get(gid, UNDECODABLE)
+        return torch.zeros(1), url, torch.tensor(float(lbl))
