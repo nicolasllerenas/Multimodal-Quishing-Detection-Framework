@@ -27,7 +27,7 @@
 - Nejati et al. reportan mas del 0.95 pero eso es con URL features (no solo QR image), por lo que es una comparacion parcial
 - Wahid 2025 y Wahid 2026 son del mismo grupo — citamos ambos correctamente
 
-### Table III — Main Results (Our Implementation)
+### Table III — Main Results (Our Implementation, Multimodal Headline)
 
 | Row | Metodo | AUC | Prec | Recall | F1 | FNR | Fuente del numero |
 |-----|--------|-----|------|--------|-----|-----|---|
@@ -35,11 +35,15 @@
 | 2 | XGBoost + 25 feat | 0.810 | 0.785 | 0.664 | 0.720 | 0.336 | notebook 02 |
 | 3 | LightGBM + 25 feat | 0.808 | 0.771 | 0.670 | 0.717 | 0.330 | notebook 02 |
 | 4 | Trad reported (1,998 eval samples) | 0.913 | — | — | 0.890 | — | arXiv 2505.03451 Table 3 |
-| 5a | Q-Shield single seed (real) | 0.8962 | 0.844 | 0.798 | 0.821 | 0.202 | eval_v3_on_full_set.py |
-| 5b | Q-Shield single seed + TTA  | 0.9053 | 0.853 | 0.799 | 0.825 | 0.201 | eval_v3_tta.py |
-| 5c | **Q-Shield ensemble + TTA** | **0.9146** | **0.872** | **0.801** | **0.835** | **0.199** | eval_ensemble_tta.py |
+| 5a | Q-Shield visual single seed | 0.8962 | 0.844 | 0.798 | 0.821 | 0.202 | eval_v3_on_full_set.py |
+| 5b | Q-Shield visual single seed + TTA  | 0.9053 | 0.853 | 0.799 | 0.825 | 0.201 | eval_v3_tta.py |
+| 5c | Q-Shield visual ensemble + TTA | 0.9146 | 0.872 | 0.801 | 0.835 | 0.199 | eval_ensemble_tta.py |
+| 5d | Q-Shield text-only (DistilBERT) | 0.9592 | 0.923 | 0.931 | 0.927 | 0.069 | notebook 10 — eval_multimodal.json |
+| 5e | **Q-Shield fusion (visual + text)** | **0.9749** | **0.928** | **0.943** | **0.936** | **0.057** | notebook 10 — eval_multimodal.json |
 
-**TODOS los numeros de nuestra fila (5) vienen de ejecuciones reales reproducibles.**
+**TODOS los numeros de la fila (5) vienen de ejecuciones reales reproducibles. La fila 5e es el headline del paper desde el pivote multimodal.**
+
+**Calibracion del fusion:** Brier 0.054, ECE 0.038 (vs 0.146 / 0.133 del visual single seed → 3x mejor).
 
 ### Table IV — Cross-Dataset
 
@@ -151,19 +155,27 @@ Estos son REPRODUCIBLES con notebook 02. Los numeros fueron capturados del outpu
 
 | Numero | ¿Donde? | Consistente? |
 |--------|---------|-------------|
-| 0.9146 (ensemble + TTA) | Abstract, Table III row 3, Section IV | Yes |
-| 0.8962 (single seed) | Table III row 1, Table V A1, Table V CV3 | Yes |
-| 0.835 / 0.8346 (ensemble F1) | Abstract, Table III row 3 | Yes |
-| 0.821 / 0.8207 (single seed F1) | Table III row 1, Table V A1 | Yes |
-| 0.199 / 0.1993 (ensemble FNR) | Abstract, Table III row 3 | Yes |
-| 0.202 / 0.2017 (single seed FNR) | Table III row 1, Table V A1 | Yes |
+| 0.9749 (fusion AUC, headline) | Abstract, Table V (multimodal) row fusion, Section IV.B, Section VI | Yes |
+| 0.9146 (visual ensemble AUC) | Table III row 3, Section IV.A, comparacion con Trad | Yes |
+| 0.8962 (visual single seed AUC) | Table III row 1, Table V A1, Table V CV3 | Yes |
+| 0.9592 (text-only AUC) | Table V multimodal row text | Yes |
+| 0.936 / 0.9358 (fusion F1) | Abstract, Table V multimodal row fusion | Yes |
+| 0.057 / 0.0567 (fusion FNR — already below ≤10% target) | Abstract, Table V multimodal row fusion | Yes |
+| 0.054 / 0.038 (fusion Brier / ECE) | Calibration footnote, Section IV.B | Yes |
 | 21,998 | Abstract, Section IV, Tables | Yes |
-| 3.08M params (per model) | Abstract, Section IV, Section V | Yes |
-| 6.16M params (ensemble) | Section IV inference cost | Yes |
+| 3.08M params (per visual model) | Abstract, Section IV, Section V inference cost | Yes |
+| 6.16M params (visual ensemble) | Section IV inference cost row 3 | Yes |
+| 69.1M params (fusion total = visual + DistilBERT) | Section IV inference cost row 4 | Yes |
+| +6.16 pp (fusion vs Trad) | Abstract, Section IV.B | Yes |
 | 1.94 separation ratio | Abstract, Section V XAI | Yes |
 | m=1.5 margin | Methodology eq (2), ablation | Yes |
+| Trad/CIC decode rate (100% / 95.7%) | Section III.B text branch | Yes |
+| r=0.43 (per-dataset Grad-CAM correlation) | Abstract, Section V.A.1 | Yes |
 
-**Recomendacion:** consolidar a 3 decimales (ej: 0.925, 0.858, 0.166) en todo el paper. Yo ya lo hice en las ultimas ediciones.
+**Confirmacion:** todos los numeros del paper son trazables a un script en el repo. La cadena de evidencia es:
+- Visual: notebook 06 → eval_v3_on_full_set.py / eval_v3_tta.py / eval_ensemble_tta.py
+- Text + fusion: notebook 10 → eval_multimodal.json
+- Trazabilidad publica en docs/results/*.json
 
 ---
 

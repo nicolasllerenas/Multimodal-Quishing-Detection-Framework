@@ -1,13 +1,14 @@
 # Analisis Final Completo — Q-Shield
 
-**Fecha:** 20 de abril de 2026  
-**Estado:** Todos los experimentos completados. Paper listo para review.
+**Fecha original:** 20 de abril de 2026
+**Actualizado:** Mayo de 2026 (post pivote multimodal)
+**Estado:** Pivote multimodal completado. Fusion AUC 0.9749 verificado sobre 21,998 muestras.
 
 ---
 
 ## 1. Resumen ejecutivo
 
-**Q-Shield supera al SOTA previo (Trad et al. 0.9133) alcanzando AUC = 0.9146 en un benchmark 11x mas grande y heterogeneo, usando ensemble de 2 seeds con TTA.** El ablation study confirma que cada componente del diseño contribuye material, y el cross-dataset analysis demuestra que el entrenamiento combinado (Trad + CIC) es necesario para generalizar. La configuracion single-seed sin TTA alcanza AUC 0.8962 con un cuarto del costo de inferencia, ofreciendo un trade-off explicito accuracy/latencia.
+**Q-Shield (configuracion multimodal con fusion) supera al SOTA previo (Trad et al. 0.9133) alcanzando AUC = 0.9749 en un benchmark 11x mas grande y heterogeneo. La rama visual sola (ensemble de 2 seeds + TTA) alcanza 0.9146 y queda como fallback graceful para QRs no decodificables. El ablation study confirma que cada componente del diseño contribuye material, y el cross-dataset analysis demuestra que el entrenamiento combinado (Trad + CIC) es necesario para generalizar.**
 
 ---
 
@@ -19,13 +20,17 @@
 |--------|-----|----|----|--------|
 | Handcrafted + RF (baseline) | 0.813 | 0.720 | 0.340 | - |
 | Trad et al. (reported, 1,998 samples) | 0.9133 | 0.890 | - | - |
-| Q-Shield (single seed, no TTA) | 0.8962 | 0.8207 | 0.2017 | 3.08M |
-| Q-Shield (single seed, +TTA) | 0.9053 | 0.8250 | 0.2009 | 3.08M |
-| **Q-Shield (ensemble + TTA, 21,998 samples)** | **0.9146** | **0.8346** | **0.1993** | 6.16M |
+| Q-Shield visual (single seed, no TTA) | 0.8962 | 0.8207 | 0.2017 | 3.08M |
+| Q-Shield visual (single seed, +TTA) | 0.9053 | 0.8250 | 0.2009 | 3.08M |
+| Q-Shield visual (ensemble + TTA) | 0.9146 | 0.8346 | 0.1993 | 6.16M |
+| Q-Shield text-only (DistilBERT URL) | 0.9592 | 0.9272 | 0.0686 | 66M |
+| **Q-Shield fusion (visual + text), 21,998 samples** | **0.9749** | **0.9358** | **0.0567** | **69.1M** |
 
-**Delta vs Trad (full ensemble): +0.13 AUC pp en un benchmark 11x mas grande y heterogeneo.**
+**Delta fusion vs Trad: +6.16 AUC pp en un benchmark 11x mas grande y heterogeneo.**
 
-**Confusion matrix del ensemble:** TN=9703, FP=1298, FN=2192, TP=8805. Precision sube de 0.844 a 0.872 al incorporar el ensemble.
+**Confusion matrix del fusion:** TN=10,201, FP=800, FN=623, TP=10,374. Solo 623 false negatives — una reduccion de 3.5x respecto al ensemble visual (que tenia 2,192 FN). FNR 0.057 ya cumple la tolerancia ≤10% al threshold default.
+
+**Calibracion del fusion:** Brier 0.054, ECE 0.038. Mejora 3x sobre el visual single seed (Brier 0.146, ECE 0.133).
 
 ### Ablation Study (Table V — single-seed, no TTA, para aislar decisiones arquitectonicas)
 
