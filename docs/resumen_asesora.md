@@ -1,27 +1,52 @@
 # Resumen Final para Reunion con Asesora
 
-**Proyecto:** Q-Shield — Framework Escalable para Deteccion de Quishing  
+**Proyecto:** Q-Shield — Framework Multimodal para Deteccion de Quishing  
 **Autor:** Nicolas Alejandro Llerena Silva  
 **Asesora:** Aurea Soriano-Vargas  
-**Fecha:** 26 de abril de 2026  
-**Status:** Todos los experimentos completos, paper actualizado con resultados de ensemble.
+**Fecha:** 5 de mayo de 2026  
+**Status:** Pivote multimodal completado. Fusion alcanza AUC 0.975, FNR 0.057.
 
 ---
 
 ## 1. Titular
 
-**Superamos al SOTA. AUC 0.9146 (ensemble + TTA) en un benchmark 11x mas grande que el del paper anterior. Modelo single-seed alcanza 0.8962 con un cuarto del costo de inferencia.**
+**Pivote multimodal exitoso. La fusion (visual + URL text + flag undecodable) alcanza AUC 0.9749 en el benchmark de 21,998 muestras — supera a Trad (0.9133) por +6.16 pp y al ensemble visual previo por +6.03 pp. FNR 0.057 ya cumple la tolerancia de seguridad ≤10% sin necesidad de calibracion.**
 
-| Metodo | AUC | F1 | Muestras val |
-|--------|-----|----|--------------|
-| Trad et al. (prior SOTA) | 0.9133 | 0.89 | 1,998 |
-| Q-Shield (single seed, no TTA) | 0.8962 | 0.8207 | 21,998 |
-| Q-Shield (single seed + TTA) | 0.9053 | 0.8250 | 21,998 |
-| **Q-Shield (ensemble + TTA)** | **0.9146** | **0.8346** | **21,998** |
+| Metodo | AUC | F1 | FNR | Muestras val |
+|--------|-----|-----|-----|--------------|
+| Trad et al. (prior SOTA visual) | 0.9133 | 0.89 | — | 1,998 |
+| Q-Shield visual single seed | 0.8962 | 0.8207 | 0.202 | 21,998 |
+| Q-Shield visual ensemble + TTA | 0.9146 | 0.8346 | 0.199 | 21,998 |
+| Q-Shield text-only (DistilBERT) | 0.9592 | 0.9272 | 0.069 | 21,998 |
+| **Q-Shield fusion (visual + text)** | **0.9749** | **0.9358** | **0.057** | **21,998** |
 
-Delta vs Trad (full ensemble): **+0.13 pp AUC** sobre **11x mas muestras validacion**, en un set heterogeneo (multiples versiones de QR + multiples resoluciones).
+**Delta vs Trad: +6.16 pp AUC.** Calibracion mejora 3x (Brier 0.146 → 0.054, ECE 0.133 → 0.038).
 
-**Nota historica:** la tabla anterior reportaba 0.9254 — ese numero venia de evaluar A1 sobre un subset (no las 21,998). Cuando re-evaluamos sobre el set completo el numero real es 0.8962. El ensemble + TTA cierra la brecha y supera a Trad genuinamente.
+---
+
+## 2. Por que pivotamos a multimodal
+
+Despues de re-leer Trad y CIC Trap4Phish identificamos tres problemas con la framing visual-only previa:
+
+1. **El "decoding paradox" no se sostiene.** pyzbar es local, deterministico, no abre red ni ejecuta JS. Confundimos decodificar (leer string) con abrir (fetch + render).
+2. **La señal visual sola es debil fuera del sandbox de Trad.** CIC reporta SSIM benigno↔phishing ≈ 0.34 (visualmente casi identicos). Su CNN logra F1 0.88; sus LLMs sobre URL decodificada llegan a F1 0.97-0.99.
+3. **Combinar ambas es la propuesta dominante por construccion.** Bountakas (2023) y Khalifa (2025) ya validaron multimodal en webpages — la formulacion sobrevive review.
+
+La rama visual no se descarta: es la unica señal disponible cuando el decode falla (~5% del corpus). El flag UNDECODABLE le dice al fusion "trust visual aqui".
+
+---
+
+## 3. Comparacion honesta con CIC
+
+CIC text-only F1 0.97-0.99 (DeBERTa-v3, ModernBERT, DeepSeek-R1-Distill, multiples epochs).
+Q-Shield text-only F1 0.927, fusion F1 0.936 (DistilBERT 66M, 3 epochs, single seed).
+
+**No superamos a CIC en URL pura.** Pero esto no es comparable directamente:
+- CIC no aborda el caso UNDECODABLE explicitamente
+- Nosotros tenemos un detector integrado con fallback graceful
+- DistilBERT 66M vs DeepSeek 671M = diferente budget de parametros
+
+Con mas epochs o un LLM mayor cerrariamos la brecha — queda como future work.
 
 ---
 
