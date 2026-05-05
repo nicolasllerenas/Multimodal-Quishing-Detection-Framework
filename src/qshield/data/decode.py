@@ -45,24 +45,43 @@ def decode_image(pil_image):
 def decode_array(arr):
     """Trad path: 69x69 binary matrix -> upscaled grayscale PIL -> decode.
 
-    pyzbar needs a quiet zone around the modules; we add a 4-module border
-    by zero-padding before upscaling, then upscale 8x with nearest-neighbour
-    so module edges stay sharp.
+    pyzbar is sensitive to quiet zone, polarity, and resolution. We try a
+    cascade: padded + multiple upscales, both polarities. The first success
+    wins; if every variant fails we return UNDECODABLE.
     """
     a = arr.astype(np.uint8)
     if a.max() <= 1:
         a = a * 255
-    # pyzbar expects black modules on white background
-    if a.mean() > 127:  # likely already inverted
-        pass
-    pad = 4
+
     h, w = a.shape
-    padded = np.full((h + 2 * pad, w + 2 * pad), 255, dtype=np.uint8)
-    padded[pad:pad + h, pad:pad + w] = a
-    img = Image.fromarray(padded, mode="L").resize(
-        (padded.shape[1] * 8, padded.shape[0] * 8), Image.NEAREST,
-    )
-    return decode_image(img)
+
+    # The matrix may arrive as either black-on-white or inverted; pyzbar wants
+    # black modules on white background, so we try both.
+    polarities = [a]
+    if a.mean() < 64:           # mostly black -> definitely needs inverting too
+        polarities.append(255 - a)
+    elif a.mean() > 192:        # mostly white -> rare, only one polarity needed
+        pass
+    else:
+        polarities.append(255 - a)
+
+    # Quiet-zone padding (modules) and upscale factors (per module).
+    # Larger pad helps pyzbar lock onto finder patterns; multiple scales help
+    # cover the resolution range pyzbar's heuristics expect.
+    pad_choices = [8, 4]
+    scale_choices = [8, 12, 4]
+
+    for variant in polarities:
+        for pad in pad_choices:
+            padded = np.full((h + 2 * pad, w + 2 * pad), 255, dtype=np.uint8)
+            padded[pad:pad + h, pad:pad + w] = variant
+            for scale in scale_choices:
+                target = (padded.shape[1] * scale, padded.shape[0] * scale)
+                img = Image.fromarray(padded, mode="L").resize(target, Image.NEAREST)
+                payload = decode_image(img)
+                if payload != UNDECODABLE:
+                    return payload
+    return UNDECODABLE
 
 
 def decode_path(path):
