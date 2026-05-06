@@ -165,10 +165,10 @@ Confirmo:
 - `paper/references.bib` — 15 referencias completas
 
 ### Figuras (todas generadas desde Colab)
-- `figures/xai/fig5_gradcam_samples.png`
-- `figures/xai/fig6_gradcam_aggregate.png`
-- `figures/xai/fig7_embedding_distances.png`
-- `figures/xai/fig8_shap_embedding.png`
+- `figures/fig_gradcam_samples.png`
+- `figures/fig_gradcam_aggregate.png`
+- `figures/fig_embedding_distances.png`
+- `figures/fig_shap_embedding.png`
 - `figures/gantt_chart_v2.png`
 
 ### Docs de soporte

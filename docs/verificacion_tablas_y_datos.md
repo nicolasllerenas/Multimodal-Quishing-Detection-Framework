@@ -95,10 +95,10 @@ Cuando corras notebook 09, agregamos:
 | Fig | Archivo | Contenido | Status |
 |-----|---------|-----------|--------|
 | 1 | `fig_pipeline_architecture.png` | Pipeline paso a paso (8 steps) | **Nueva, generada hoy** |
-| 5 | `fig5_gradcam_samples.png` | Grad-CAM en 6 benign + 6 phishing | OK, generado notebook 07 |
-| 6 | `fig6_gradcam_aggregate.png` | Mapas de atencion agregada por clase | OK, notebook 07 |
-| 7 | `fig7_embedding_distances.png` | Histograma de distancias | OK, notebook 07 |
-| 8 | `fig8_shap_embedding.png` | SHAP top-20 dims | OK, notebook 07 |
+| 5 | `fig_gradcam_samples.png` | Grad-CAM en 6 benign + 6 phishing | OK, generado notebook 07 |
+| 6 | `fig_gradcam_aggregate.png` | Mapas de atencion agregada por clase | OK, notebook 07 |
+| 7 | `fig_embedding_distances.png` | Histograma de distancias | OK, notebook 07 |
+| 8 | `fig_shap_embedding.png` | SHAP top-20 dims | OK, notebook 07 |
 
 Pendiente de agregar cuando notebook 09 corra:
 - `fig_gradcam_per_dataset.png` — validacion del patron izq/der por dataset
