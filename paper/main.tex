@@ -122,6 +122,8 @@ Table~\ref{tab:comparison} situates Q-Shield relative to prior work. No previous
 \label{tab:comparison}
 \centering
 \renewcommand{\arraystretch}{1.15}
+\setlength{\tabcolsep}{4pt}
+\small
 \begin{tabular}{lcccccl}
 \toprule
 \textbf{Study} & \textbf{Approach} & \textbf{Pre-decode layer} & \textbf{Post-decode layer} & \textbf{Deep learning} & \textbf{Cross-dataset} & \textbf{Main limitation} \\
@@ -155,10 +157,10 @@ Figure~\ref{fig:pipeline} presents the full Q-Shield detection pipeline. The fra
 
 \textbf{Fusion.} A small MLP combines the visual logit, the text logit, and a binary undecodability flag into the final phishing score (Section~\ref{sec:fusion}). Because both branches output a one-dimensional logit, the fusion head is tiny (3-input MLP, 3 hidden units) and trains in seconds on cached features.
 
-\begin{figure*}[!htbp]
+\begin{figure*}[!t]
 \centering
-\includegraphics[width=\textwidth]{descarga_abstract.png}
-\caption{Q-Shield detection pipeline. Steps 1--6 are active both during training and inference; the contrastive and focal loss blocks (orange) are active only during their respective training phases; the XAI branch (purple) is used only at inference when explanations are requested.}
+\includegraphics[width=\textwidth]{fig_pipeline_abstract.png}
+\caption{Q-Shield multimodal detection pipeline. Two parallel branches share the same QR sample: a pre-decode visual branch (Siamese MobileNetV2 $\to$ 128-d embedding $\to$ classifier head) and a post-decode text branch (offline pyzbar decoding $\to$ DistilBERT URL classifier). The two logits and an explicit undecodability flag $f$ are combined by a small late-fusion MLP. Training boxes (orange) are active only during the corresponding phase; the explainability block (purple) is applied only at inference on demand.}
 \label{fig:pipeline}
 \end{figure*}
 
@@ -572,16 +574,19 @@ The deployment cost of Q-Shield depends on which configuration is used. Table~\r
 \centering
 \renewcommand{\arraystretch}{1.15}
 \small
+\setlength{\tabcolsep}{4pt}
+\resizebox{\columnwidth}{!}{%
 \begin{tabular}{lcccc}
 \toprule
 \textbf{Configuration} & \textbf{Params} & \textbf{Disk} & \textbf{CPU} & \textbf{AUC} \\
 \midrule
-Visual single seed, no TTA      & $3.08$M  & $12$\,MB  & $24.9$\,ms  & $0.896$ \\
-Visual single seed $+$ TTA      & $3.08$M  & $12$\,MB  & $49.8$\,ms  & $0.905$ \\
-Visual ensemble $+$ TTA         & $6.16$M  & $24$\,MB  & $99.6$\,ms  & $0.915$ \\
-\textbf{Fusion (visual + DistilBERT URL)} & $\mathbf{69.1}$M & $\mathbf{267}$\,MB & $\mathbf{\sim 95}$\,ms & $\mathbf{0.975}$ \\
+Visual single seed, no TTA & $3.08$M & $12$\,MB & $24.9$\,ms & $0.896$ \\
+Visual single seed + TTA   & $3.08$M & $12$\,MB & $49.8$\,ms & $0.905$ \\
+Visual ensemble + TTA      & $6.16$M & $24$\,MB & $99.6$\,ms & $0.915$ \\
+\textbf{Fusion (visual + URL)} & $\mathbf{69.1}$M & $\mathbf{267}$\,MB & $\mathbf{\sim 95}$\,ms & $\mathbf{0.975}$ \\
 \bottomrule
-\end{tabular}
+\end{tabular}%
+}
 \end{table}
 
 Each visual model contains $3.08$M trainable parameters and occupies $12.0$\,MB on disk in FP32. On a mid-range CPU, a single forward pass completes in $24.9$\,ms; on a Tesla T4 GPU, the same forward pass completes in $6.0$\,ms with batched throughput of $1{,}156$ images per second (batch size $32$). The TTA refinement requires two forward passes per image (original and horizontal flip), and the two-seed ensemble runs the same protocol on each model, for a total of four forward passes in the visual ensemble. The fused multimodal configuration is dominated by DistilBERT ($66$M parameters, $\sim$$255$\,MB on disk), which adds one tokenization and one transformer forward pass per scan. On a Tesla T4, DistilBERT at sequence length $96$ runs in approximately $7$\,ms per sample, plus the visual branch ($25$\,ms CPU or $6$\,ms GPU) and the $161$-parameter fusion head whose cost is negligible. The end-to-end CPU latency of $\sim$$100$\,ms for the fused configuration sits at the edge of the interactive-mobile budget, with the $0.06$ AUC margin over the visual ensemble fully justifying the additional cost where decoding is feasible. For latency-critical or low-power deployments where the text branch cannot run, the visual single-seed variant offers a $0.079$ AUC concession (relative to fused) in exchange for a roughly $4\times$ compute reduction.

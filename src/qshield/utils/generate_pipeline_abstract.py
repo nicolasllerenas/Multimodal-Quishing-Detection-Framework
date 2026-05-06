@@ -87,165 +87,165 @@ def training_annot(ax, x, y, w, h, title, body):
 
 
 # ------------------------------------------------------------
-# Canvas
+# Canvas — wide-format to fit a single IEEE figure* without forcing
+# a page break.
 # ------------------------------------------------------------
-fig, ax = plt.subplots(figsize=(16, 9.5))
+fig, ax = plt.subplots(figsize=(16, 7.6))
 ax.set_xlim(0, 16)
-ax.set_ylim(0, 9.5)
-ax.set_aspect('equal')
+ax.set_ylim(0, 7.6)
+ax.set_aspect('auto')
 ax.axis('off')
 
 
 # Title
-ax.text(8, 9.05, 'Q-Shield: Multimodal Quishing Detection Pipeline',
-        ha='center', va='center', fontsize=20, fontweight='bold',
+ax.text(8, 7.20, 'Q-Shield: Multimodal Quishing Detection Pipeline',
+        ha='center', va='center', fontsize=18, fontweight='bold',
         color='#0E1B2C')
-ax.text(8, 8.60, 'visual Siamese branch + offline-decoded URL text branch + late fusion',
-        ha='center', va='center', fontsize=12, color='#444444', style='italic')
+ax.text(8, 6.78, 'visual Siamese branch + offline-decoded URL text branch + late fusion',
+        ha='center', va='center', fontsize=11, color='#444444', style='italic')
 
 # Faint horizontal divider under the title
-ax.plot([0.5, 15.5], [8.30, 8.30], color='#CCCCCC', linewidth=0.6)
+ax.plot([0.5, 15.5], [6.50, 6.50], color='#CCCCCC', linewidth=0.6)
 
-# Headline metrics strip (centered under the divider)
-ax.text(8, 8.05,
+# Headline metrics strip
+ax.text(8, 6.27,
         'AUC 0.9749   ·   F1 0.936   ·   recall 0.943   ·   '
         'FNR 0.057   ·   ECE 0.038   ·   n = 21,998 (Trad + CIC)',
-        ha='center', va='center', fontsize=11, color='#0E1B2C',
+        ha='center', va='center', fontsize=10.5, color='#0E1B2C',
         fontweight='bold')
 
 
 # ------------------------------------------------------------
 # Stage 1 — shared input column (left)
 # ------------------------------------------------------------
-box(ax, 0.4, 6.6, 1.7, 1.1, '1. Raw QR',
+box(ax, 0.4, 5.05, 1.7, 0.95, '1. Raw QR',
     'image\n(any version,\nany resolution)',
-    'input', fontsize_top=11, fontsize_body=8.5)
+    'input', fontsize_top=10.5, fontsize_body=8)
 
-box(ax, 0.4, 4.5, 1.7, 1.1, '2. Pre-process',
+box(ax, 0.4, 3.55, 1.7, 0.95, '2. Pre-process',
     'grayscale\n+ resize\n224×224',
-    'input', fontsize_top=11, fontsize_body=8.5)
+    'input', fontsize_top=10.5, fontsize_body=8)
 
 # Connector from raw → preprocess
-arrow(ax, 1.25, 6.6, 1.25, 5.6, lw=1.2)
+arrow(ax, 1.25, 5.05, 1.25, 4.5, lw=1.2)
 
 
 # ------------------------------------------------------------
 # Stage 2 — VISUAL branch (upper row)
 # ------------------------------------------------------------
-box(ax, 2.6, 5.65, 2.6, 1.4, '3a. Visual backbone',
-    'Siamese\nMobileNetV2\n(shared weights)',
-    'visual', fontsize_top=11, fontsize_body=9)
+box(ax, 2.6, 4.4, 2.6, 1.25, '3a. Visual backbone',
+    'Siamese MobileNetV2\n(shared weights)',
+    'visual', fontsize_top=10.5, fontsize_body=8.5)
 
-box(ax, 5.5, 5.65, 1.95, 1.4, '4a. Embedding',
+box(ax, 5.5, 4.4, 1.95, 1.25, '4a. Embedding',
     '128-d\nL2-normalized',
-    'visual', fontsize_top=11, fontsize_body=9)
+    'visual', fontsize_top=10.5, fontsize_body=8.5)
 
-box(ax, 7.75, 5.65, 2.5, 1.4, '5a. Classifier head',
-    '128 → 512 → 128\n→ 32 → 1\n(BN + ReLU + Dropout)',
-    'classifier', fontsize_top=11, fontsize_body=9)
+box(ax, 7.75, 4.4, 2.5, 1.25, '5a. Classifier head',
+    '128→512→128→32→1\n(BN+ReLU+Dropout)',
+    'classifier', fontsize_top=10.5, fontsize_body=8.5)
 
 # Visual logit label
-ax.text(10.5, 6.35, '$\\ell_v$', ha='center', va='center',
-        fontsize=14, fontweight='bold', color=COLORS['visual'][1])
+ax.text(10.5, 5.0, '$\\ell_v$', ha='center', va='center',
+        fontsize=13, fontweight='bold', color=COLORS['visual'][1])
 
 # Arrows along visual branch
-arrow(ax, 2.1, 5.05, 2.6, 6.35, lw=1.3, mutation=15)  # preprocess → backbone
-arrow(ax, 5.2, 6.35, 5.5, 6.35)                        # backbone → embedding
-arrow(ax, 7.45, 6.35, 7.75, 6.35)                      # embedding → head
-arrow(ax, 10.25, 6.35, 11.0, 5.5, lw=1.5)              # head → fusion (visual logit)
+arrow(ax, 2.1, 4.0, 2.6, 5.0, lw=1.3, mutation=14)
+arrow(ax, 5.2, 5.0, 5.5, 5.0)
+arrow(ax, 7.45, 5.0, 7.75, 5.0)
+arrow(ax, 10.25, 5.0, 11.0, 4.4, lw=1.5)
 
 
 # ------------------------------------------------------------
 # Stage 3 — TEXT branch (lower row)
 # ------------------------------------------------------------
-box(ax, 2.6, 3.2, 2.0, 1.4, '3b. pyzbar decode',
-    'libzbar (offline,\nlocal, no network)',
-    'decode', fontsize_top=11, fontsize_body=9)
+box(ax, 2.6, 2.55, 2.0, 1.25, '3b. pyzbar decode',
+    'libzbar\n(offline, local)',
+    'decode', fontsize_top=10.5, fontsize_body=8.5)
 
-box(ax, 4.85, 3.2, 2.4, 1.4, '4b. URL string',
+box(ax, 4.85, 2.55, 2.4, 1.25, '4b. URL string',
     'or  ⟨UNDECODABLE⟩\n+ binary flag $f$',
-    'decode', fontsize_top=11, fontsize_body=9)
+    'decode', fontsize_top=10.5, fontsize_body=8.5)
 
-box(ax, 7.55, 3.2, 2.7, 1.4, '5b. URL classifier',
-    'tokenizer +\nDistilBERT (66M)\n[CLS] → linear',
-    'text', fontsize_top=11, fontsize_body=9)
+box(ax, 7.55, 2.55, 2.7, 1.25, '5b. URL classifier',
+    'tokenizer +\nDistilBERT (66M)',
+    'text', fontsize_top=10.5, fontsize_body=8.5)
 
 # Text logit label
-ax.text(10.5, 3.9, '$\\ell_t$', ha='center', va='center',
-        fontsize=14, fontweight='bold', color=COLORS['text'][1])
+ax.text(10.5, 3.18, '$\\ell_t$', ha='center', va='center',
+        fontsize=13, fontweight='bold', color=COLORS['text'][1])
 
 # Arrows along text branch
-arrow(ax, 2.1, 5.05, 2.6, 3.9, lw=1.3, mutation=15)    # preprocess → decode
-arrow(ax, 4.6, 3.9, 4.85, 3.9)                          # decode → URL string
-arrow(ax, 7.25, 3.9, 7.55, 3.9)                         # URL string → DistilBERT
-arrow(ax, 10.25, 3.9, 11.0, 4.7, lw=1.5)                # DistilBERT → fusion (text logit)
+arrow(ax, 2.1, 4.0, 2.6, 3.18, lw=1.3, mutation=14)
+arrow(ax, 4.6, 3.18, 4.85, 3.18)
+arrow(ax, 7.25, 3.18, 7.55, 3.18)
+arrow(ax, 10.25, 3.18, 11.0, 3.7, lw=1.5)
 
 
 # ------------------------------------------------------------
 # Stage 4 — FUSION + OUTPUT
 # ------------------------------------------------------------
-box(ax, 11.0, 4.65, 2.5, 1.5, '6. Late-fusion',
-    'MLP $\\,[\\ell_v, \\ell_t, f]\\,$\n$\\to 16 \\to 1$\n(161 params)',
-    'fusion', fontsize_top=11, fontsize_body=9)
+box(ax, 11.0, 3.65, 2.5, 1.35, '6. Late-fusion',
+    'MLP $[\\ell_v, \\ell_t, f]$\n$\\to 16 \\to 1$',
+    'fusion', fontsize_top=10.5, fontsize_body=9)
 
-box(ax, 13.85, 4.65, 1.85, 1.5, '7. $\\sigma(\\mathrm{logit})$',
-    'final\n$P(\\mathrm{phishing})$\n(threshold 0.5)',
-    'output', fontsize_top=11, fontsize_body=9)
+box(ax, 13.85, 3.65, 1.85, 1.35, '7. $\\sigma(\\mathrm{logit})$',
+    'final\n$P(\\mathrm{phishing})$',
+    'output', fontsize_top=10.5, fontsize_body=9)
 
-arrow(ax, 13.5, 5.4, 13.85, 5.4, lw=1.5)
+arrow(ax, 13.5, 4.32, 13.85, 4.32, lw=1.5)
 
 
-# Undecodable flag arrow into fusion (curving up from below the text branch)
-ax.text(8.7, 2.85, 'undecodability flag $f$',
-        ha='center', va='center', fontsize=9, color=COLORS['decode'][1],
+# Undecodable flag arrow into fusion
+ax.text(8.7, 2.30, 'undecodability flag $f$',
+        ha='center', va='center', fontsize=8.5, color=COLORS['decode'][1],
         style='italic', fontweight='bold')
-curved_arrow(ax, 6.05, 3.2, 11.0, 4.85, color=COLORS['decode'][1],
+curved_arrow(ax, 6.05, 2.55, 11.0, 3.8, color=COLORS['decode'][1],
              lw=1.2, rad=-0.25, mutation=12, alpha=0.85)
 
 
 # ------------------------------------------------------------
-# Training annotations (below each component that gets trained)
+# Training annotations (compact row at bottom)
 # ------------------------------------------------------------
-training_annot(ax, 2.6, 1.6, 2.6, 1.05,
+training_annot(ax, 2.6, 1.05, 2.6, 0.85,
                'Phase 1 (visual)',
-               'Contrastive loss\n$\\mathcal{L}_{\\mathrm{con}}(e_1,e_2,y)$,  margin $m=1.5$')
-arrow(ax, 3.9, 2.65, 3.9, 5.65, color=COLORS['training'][1],
-      lw=1.2, alpha=0.7, style='-|>')
+               'Contrastive,  $m=1.5$')
+arrow(ax, 3.9, 1.90, 3.9, 4.4, color=COLORS['training'][1],
+      lw=1.0, alpha=0.6, style='-|>')
 
-training_annot(ax, 7.55, 1.6, 2.7, 1.05,
+training_annot(ax, 7.55, 1.05, 2.7, 0.85,
                'Phase 2 (visual head)',
-               'Focal loss  $\\gamma{=}2,\\,\\alpha{=}0.5$\nbackbone frozen 5 ep, then unfrozen')
-arrow(ax, 8.9, 2.65, 8.9, 5.65, color=COLORS['training'][1],
-      lw=1.2, alpha=0.7, style='-|>')
+               'Focal,  $\\gamma{=}2,\\,\\alpha{=}0.5$')
+arrow(ax, 8.9, 1.90, 8.9, 4.4, color=COLORS['training'][1],
+      lw=1.0, alpha=0.6, style='-|>')
 
-training_annot(ax, 10.55, 1.6, 2.6, 1.05,
+training_annot(ax, 10.55, 1.05, 2.6, 0.85,
                'Text fine-tune',
-               'Focal loss, AdamW lr $2{\\times}10^{-5}$,\n3 epochs over decoded URLs')
-arrow(ax, 11.85, 2.65, 9.0, 3.2, color=COLORS['training'][1],
-      lw=1.2, alpha=0.7, style='-|>')
+               'Focal,  AdamW $2{\\times}10^{-5}$,  3 ep')
+arrow(ax, 11.85, 1.90, 9.0, 2.55, color=COLORS['training'][1],
+      lw=1.0, alpha=0.6, style='-|>')
 
-training_annot(ax, 13.45, 1.6, 2.3, 1.05,
+training_annot(ax, 13.45, 1.05, 2.3, 0.85,
                'Fusion train',
-               'Focal loss on cached\nlogits ($\\sim$1 min on CPU)')
-arrow(ax, 14.45, 2.65, 12.25, 4.65, color=COLORS['training'][1],
-      lw=1.2, alpha=0.7, style='-|>')
+               'Focal on cached logits')
+arrow(ax, 14.45, 1.90, 12.25, 3.65, color=COLORS['training'][1],
+      lw=1.0, alpha=0.6, style='-|>')
 
 
 # ------------------------------------------------------------
 # XAI panel (left, below the input column)
 # ------------------------------------------------------------
-box(ax, 0.4, 1.6, 1.9, 1.05, '8. Explainability',
-    'Grad-CAM (visual)\n+ SHAP (embedding)',
-    'xai', fontsize_top=10.5, fontsize_body=8.5)
-# Curved arrow from XAI box to the visual classifier head
-curved_arrow(ax, 1.35, 2.65, 8.5, 5.65, color=COLORS['xai'][1],
-             lw=1.2, alpha=0.55, rad=-0.18, mutation=12, style='-|>')
+box(ax, 0.4, 1.05, 1.9, 0.85, '8. Explainability',
+    'Grad-CAM + SHAP',
+    'xai', fontsize_top=10, fontsize_body=8)
+curved_arrow(ax, 1.35, 1.90, 8.5, 4.4, color=COLORS['xai'][1],
+             lw=1.0, alpha=0.5, rad=-0.18, mutation=11, style='-|>')
 
 
 # ------------------------------------------------------------
 # Legend (bottom)
 # ------------------------------------------------------------
-legend_y = 0.6
+legend_y = 0.45
 legend_entries = [
     ('Input / pre-processing', 'input'),
     ('Visual backbone',         'visual'),
@@ -257,9 +257,9 @@ legend_entries = [
     ('Training loss',           'training'),
     ('Explainability',          'xai'),
 ]
-swatch_w = 0.32
-swatch_h = 0.32
-text_dx = 0.42
+swatch_w = 0.28
+swatch_h = 0.28
+text_dx = 0.38
 spacing = 1.62
 start_x = 0.5
 
@@ -271,18 +271,16 @@ for i, (label, kind) in enumerate(legend_entries):
                           linewidth=1.0, edgecolor=edge, facecolor=fill)
     ax.add_patch(rect)
     ax.text(cx + text_dx, legend_y + swatch_h / 2, label,
-            ha='left', va='center', fontsize=8.5, color=INK)
+            ha='left', va='center', fontsize=8, color=INK)
 
 
-# ------------------------------------------------------------
 # Footer caption
-# ------------------------------------------------------------
-ax.text(8, 0.18,
-        'Training: Phase 1 + Phase 2 train the visual branch; the URL classifier is fine-tuned on offline-decoded URLs; '
-        'the fusion MLP learns over cached logits. '
-        'Inference: visual + text logits and the undecodability flag feed the fusion; step 8 is applied on demand.',
-        ha='center', va='center', fontsize=8.5, style='italic',
-        color='#555555', wrap=True)
+ax.text(8, 0.10,
+        'Training: visual phases 1+2, URL fine-tune, fusion train. '
+        'Inference: visual + text logits + undecodability flag → fusion → P(phishing). '
+        'Step 8 (XAI) on demand.',
+        ha='center', va='center', fontsize=8, style='italic',
+        color='#555555')
 
 
 plt.tight_layout()

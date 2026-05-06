@@ -846,8 +846,8 @@ def gradcam_slide():
     s = slide()
     rect(s, 0, 0, SW, SH, PAPER)
     page_header(s, 'Explainability', 'Grad-CAM · spatial attention over the QR matrix')
-    img = FIGURES / 'xai' / 'fig5_gradcam_samples.png'
-    img2 = FIGURES / 'xai' / 'fig6_gradcam_aggregate.png'
+    img = FIGURES / 'fig_gradcam_samples.png'
+    img2 = FIGURES / 'fig_gradcam_aggregate.png'
     if img.exists():
         s.shapes.add_picture(str(img), Inches(0.5), Inches(1.85),
                              width=Inches(7.2), height=Inches(5.4))
@@ -869,8 +869,8 @@ def shap_slide():
     s = slide()
     rect(s, 0, 0, SW, SH, PAPER)
     page_header(s, 'Explainability', 'SHAP and embedding space · latent-level interpretability')
-    a = FIGURES / 'xai' / 'fig8_shap_embedding.png'
-    b = FIGURES / 'xai' / 'fig7_embedding_distances.png'
+    a = FIGURES / 'fig_shap_embedding.png'
+    b = FIGURES / 'fig_embedding_distances.png'
     if a.exists():
         s.shapes.add_picture(str(a), Inches(0.5), Inches(1.85),
                              width=Inches(6.1), height=Inches(3.2))
