@@ -19,20 +19,27 @@
 
 \begin{document}
 
-\title{Q-Shield: An Explainable Multimodal Framework for Quishing Detection via Siamese Visual and Offline URL Analysis}
+\title{Q-Shield: An Explainable Multimodal Framework for QR Code Phishing (Quishing) Detection Using Siamese Visual and Offline  URL Analysis}
 
 \author{
 \IEEEauthorblockN{1\textsuperscript{st} Nicol\'{a}s Alejandro Llerena Silva}
 \IEEEauthorblockA{
 \textit{Department of Computer Science} \\
-\textit{Universidad de Ingenier\'{i}a y Tecnolog\'{i}a (UTEC)}\\
+\textit{UTEC}\\
 Lima, Per\'{u} \\
 0009-0007-3244-7746}
 \and
-\IEEEauthorblockN{2\textsuperscript{nd} Aurea Soriano-Vargas}
+\IEEEauthorblockN{2\textsuperscript{nd} Rensso Mora}
 \IEEEauthorblockA{
 \textit{Faculty of Computing} \\
-\textit{Universidad de Ingenier\'{i}a y Tecnolog\'{i}a (UTEC)}\\
+\textit{UTEC}\\
+Lima, Per\'{u} \\
+XXXXXXXXXXXXXXXX}
+\and
+\IEEEauthorblockN{3\textsuperscript{rd} Aurea Soriano-Vargas}
+\IEEEauthorblockA{
+\textit{Faculty of Computing} \\
+\textit{UTEC}\\
 Lima, Per\'{u} \\
 0000-0002-8429-4119}
 }
@@ -40,631 +47,272 @@ Lima, Per\'{u} \\
 \maketitle
 
 \begin{abstract}
-QR code phishing---\textit{quishing}---has become a pressing cybersecurity concern as mobile payment adoption accelerates worldwide. The defensive pipeline against quishing has two natural intervention points: a \textit{pre-decode} stage where only the rendered QR image is available, and a \textit{post-decode} stage where the offline-decoded payload (typically a URL) is also available. Each stage carries a distinct signal, and detectors that operate at one stage in isolation discard the evidence of the other. We propose Q-Shield, a multimodal framework that combines (i) a Siamese contrastive visual branch built on a lightweight MobileNetV2 backbone, which classifies the QR image without any decoding, and (ii) a transformer-based text branch that consumes the offline-decoded URL string---decoded locally with no network call or payload execution---fused through a small late-fusion head with an explicit undecodability flag. On a combined benchmark of 21{,}998 QR samples drawn from the Trad et al.\ corpus and the CIC Trap4Phish 2025 dataset---an order of magnitude larger than the largest prior evaluation and spanning multiple QR versions and image resolutions---the fused configuration achieves AUC $0.975$, F1 $0.936$, recall $0.943$, and a default-threshold false-negative rate of $0.057$, already below the conventional $\leq 10\%$ security tolerance without retraining. The visual branch in isolation reaches AUC $0.915$ (two-seed ensemble with horizontal-flip test-time augmentation) and remains the operative signal whenever the QR payload cannot be decoded (low contrast, missing quiet zone, damaged finder pattern), so the multimodal model degrades gracefully to a calibrated visual-only detector in the worst case. Compared to the prior visual-only state of the art (Trad et al., AUC $0.913$ on a uniform single-version corpus), the fused model delivers a $+6.16$ pp AUC improvement on a benchmark eleven times larger and visually heterogeneous. Grad-CAM with per-dataset attention validation (spatial correlation $r=0.43$) explains the visual decisions, SHAP analysis on the 128-dimensional embedding describes the latent geometry, and the full multimodal model fits within mobile interaction budgets at $\sim$$100$\,ms CPU per scan.
+Quick Response (QR) codes have become a ubiquitous interface for digital interaction, but their widespread adoption has also enabled a growing class of phishing attacks known as quishing. Existing defenses typically rely either on analyzing decoded payloads, which fails when decoding is not possible, or on visual inspection of QR structures, which often lacks discriminative power. In this work, we introduce Q-Shield, an explainable multimodal framework for quishing detection that models the QR processing pipeline through two complementary stages. The proposed approach combines a pre-decode visual branch, based on a Siamese convolutional network trained with contrastive learning, with a post-decode text branch leveraging a transformer encoder for URL analysis. The outputs of both branches are integrated through a lightweight late-fusion mechanism, enabling robust detection under both decodable and non-decodable conditions.
+
+We evaluate Q-Shield on a heterogeneous benchmark constructed from multiple datasets comprising 21,998 samples with varying QR formats and resolutions. The proposed framework achieves an AUC of 0.9749 and a false-negative rate of 0.057, outperforming visual-only and existing multimodal approaches while meeting common security constraints without threshold calibration. Experimental results demonstrate that multimodal fusion provides complementary gains in accuracy and robustness, particularly under decoding failures and domain shifts. Additionally, Q-Shield incorporates dual-layer explainability using Grad-CAM and SHAP, providing interpretable insights into spatial and feature-level decision processes.
 \end{abstract}
 
 \begin{IEEEkeywords}
-quishing, phishing detection, QR codes, Siamese networks, contrastive learning, explainable AI, MobileNetV2, cybersecurity
+QR Code Security, Quishing Detection, Multimodal Learning, Siamese Networks, Phishing Detection, XAI
 \end{IEEEkeywords}
 
 %% ============================================================
+
 \section{Introduction}
-%% ============================================================
 
-Quick Response (QR) codes have become an essential component of modern digital interactions, enabling fast and convenient access to online services such as payments, authentication, and information sharing. Their adoption has increased significantly in recent years, particularly following the COVID-19 pandemic, when contactless interactions became the norm. However, this rapid adoption has also introduced new security vulnerabilities, most notably QR code phishing attacks, commonly referred to as \textit{quishing}~\cite{sharevski2022phishing}.
+Quick Response (QR) codes have become a ubiquitous interface for mobile payments, authentication, and information sharing, with adoption accelerating after the COVID-19 pandemic. This rapid integration has also enabled QR code phishing attacks---\textit{quishing}~\cite{sharevski2022phishing}---which exploit the social-engineering dynamics studied by Mitnick~\cite{mitnick2002artdeception} and Hadnagy~\cite{hadnagy2018socialengineering}: QR codes are visually opaque, require a single gesture to activate, and are typically embedded in implicitly trusted contexts (restaurant menus, parking systems, invoices), which attackers exploit to deliver malicious payloads with low user scrutiny. Industry reports identify phishing as a leading initial access vector~\cite{verizon2024dbir} with per-incident costs in the millions~\cite{ibm2024cost}, and recent empirical work shows that quishing is as effective as traditional phishing while being harder to detect for both users and conventional defenses~\cite{weinz2025impact, geisler2024hooked}.
 
-At its core, quishing is a social-engineering attack rather than a purely technical one. Classic treatments of the discipline---Mitnick's account of human-factor exploitation~\cite{mitnick2002artdeception} and Hadnagy's systematic framework for social engineering~\cite{hadnagy2018socialengineering}---emphasize that the attacker's goal is to induce an impulsive, low-scrutiny action from the target. QR codes are almost perfectly suited to this purpose: they are opaque to the human eye, require a single gesture to activate, and are presented in contexts (restaurant menus, parking meters, invoice PDFs) that implicitly mark them as legitimate. Users thus develop a learned trust that attackers subsequently weaponize. The 2024 Verizon Data Breach Investigations Report identifies social-engineering-driven phishing as a leading initial access vector across industries~\cite{verizon2024dbir}, while the 2024 IBM Cost of a Data Breach Report places the average cost of phishing-originated breaches at several million dollars per incident~\cite{ibm2024cost}. Recent empirical studies further confirm that quishing succeeds as frequently as traditional phishing, yet is more difficult for users and conventional security systems to detect~\cite{weinz2025impact, geisler2024hooked}.
+Existing defenses split into two strands. URL-based detectors decode the QR code and classify the resulting payload using lexical or learned features~\cite{khalifa2025multiphishnet, nejati2026cic}; they achieve high accuracy when the URL is recoverable but become inapplicable when the QR is unreadable (noise, damage, adversarial manipulation) or encodes non-URL data (Wi-Fi credentials, payment instructions)~\cite{trad2025detecting}. Image-based detectors~\cite{trad2025detecting} operate directly on the QR matrix and remain effective without decoding, but their performance lags behind payload-based methods on heterogeneous corpora~\cite{nejati2026cic}. Treating the two as mutually exclusive discards information: visual methods ignore payload-level signal when decoding is possible, and URL-based methods offer no protection when it fails. We therefore frame quishing detection as a \textit{two-stage problem} aligned with the QR processing pipeline (\textit{pre-decode}, where only the image is available, and \textit{post-decode}, where the payload can be analyzed when decoding succeeds), and note that no prior work unifies both signals or systematically evaluates generalization across independently collected corpora~\cite{nejati2026cic, wahid2026alfa}.
 
-Existing approaches for detecting malicious QR codes split into two strands. URL-based detectors~\cite{wahsheh2021secure, khalifa2025multiphishnet} extract lexical and structural features from the decoded URL and classify it; the recent CIC Trap4Phish benchmark~\cite{nejati2026cic} reports that lightweight language models on decoded URLs reach $\geq$0.99 F1 on its corpus. The cost of this performance is the decoding requirement: a QR scanner must render the payload before classification, and QR codes can encode data beyond URLs (Wi-Fi credentials, payment information, contact records), so URL-based detection is necessarily incomplete~\cite{trad2025detecting}. Direct image-based detectors~\cite{wahid2025qris, trad2025detecting} avoid this requirement and apply when the payload is undecodable, but their reported performance ($\sim$0.91 AUC on uniform single-version corpora; CNN F1 $\sim$0.88 on heterogeneous CIC images~\cite{nejati2026cic}) lies measurably below the URL-side numbers. We argue that this gap is not an indictment of either strand but a consequence of treating them as alternatives rather than as layers of the same detector. Our framework therefore combines both: a Siamese visual branch that operates in the pre-decode regime, and an optional URL text branch that consumes the offline-decoded payload (decoding here is local, deterministic, and does not execute the URL---no fetch, no DNS, no JavaScript). A further challenge orthogonal to either branch is the lack of cross-dataset evaluation: prior reports use a single corpus, leaving open whether the numbers reflect generalization or dataset-specific artifacts~\cite{nejati2026cic, wahid2026alfa}. Q-Shield is trained and evaluated jointly across two independent corpora to address this gap.
-
-\subsection{Research gaps}
-
-From the literature surveyed above, we identify four concrete gaps that motivate the present work:
-
-\begin{enumerate}
-\item \textbf{Single-stage detection.} Prior work treats pre-decode (image) and post-decode (URL) detection as competing alternatives, not as complementary layers of a single defender. The result is that visual-only methods are blind to URL-level signal even when offline decoding is feasible, while URL-only methods cannot help when decoding fails.
-\item \textbf{Absence of cross-dataset evaluation.} Every prior study we are aware of reports results on a single dataset; none measures whether learned patterns transfer across independently collected QR corpora that differ in QR version, image format, or rendering pipeline.
-\item \textbf{Limited dual-layer explainability.} Prior structural approaches provide either feature importance or handcrafted interpretability, but not both pixel-level (where does the model look?) and latent-level (which learned features drive the decision?) explanations.
-\item \textbf{No operational deployment characterization.} Prior work reports a single operating point, typically at threshold $0.5$, without quantifying the recall/precision trade-off that an operator would need to meet a specific security tolerance (e.g., false-negative rate $\leq 10\%$).
-\end{enumerate}
-
-\subsection{Our contribution}
-
-In this paper, we propose \textbf{Q-Shield}, a multimodal framework that closes all four gaps simultaneously. Q-Shield is organized as two branches that share the same QR sample but operate at different stages of the detection pipeline. The visual branch, built on a Siamese MobileNetV2 backbone, classifies the QR image directly without any decoding, and is the only available signal when the payload cannot be decoded. The text branch consumes the offline-decoded URL string---decoded locally with no network call or payload execution---and refines the decision when decoding succeeds. A small late-fusion module combines both. The specific contributions are:
-
-\begin{itemize}
-\item \textbf{Multimodal pipeline aligned with the natural quishing defence stages.} The framework provides a pre-decode visual layer and a post-decode URL layer fused at the logit level. Each layer can act on its own; together they cover the cases where one of them has no signal to act on. This is, to our knowledge, the first quishing detector explicitly designed around the two-stage structure of the QR pipeline rather than choosing one stage over the other.
-
-\item \textbf{Siamese contrastive visual branch.} The first application of Siamese networks with contrastive supervision to QR phishing detection. The backbone learns a metric space over QR images from paired supervision and yields an inter- to intra-class distance ratio of $1.94$ in the learned embedding space.
-
-\item \textbf{Cross-dataset generalization as a first-class design objective.} Q-Shield is trained and evaluated jointly on Trad~\cite{trad2025detecting} and CIC Trap4Phish 2025~\cite{nejati2026cic}, producing a 21{,}998-sample heterogeneous validation set spanning multiple QR versions and image formats---an order of magnitude larger than the largest prior evaluation.
-
-\item \textbf{Operating-point guarantees for security deployment.} The fused multimodal model achieves FNR $0.057$ at the default threshold, already below the conventional $\leq 10\%$ security tolerance without any retraining or calibration. The visual fallback (used when the QR cannot be decoded) admits a calibrated threshold that reaches FNR $0.098$, so the system meets the target in both the decodable and the undecodable regimes.
-
-\item \textbf{Dual-layer explainability, cross-validated.} We combine Grad-CAM visualization of convolutional attention with SHAP analysis of the learned embedding dimensions, and verify on each dataset separately (Pearson $r=0.43$ between class-difference attention maps) that the learned attention patterns are not dataset artifacts.
-\end{itemize}
-
-The remainder of the paper is organized as follows. Section~\ref{sec:related} reviews prior work and situates Q-Shield relative to it. Section~\ref{sec:methodology} describes the architecture, the loss functions used in each of the two training phases, and the datasets. Section~\ref{sec:results} reports main results, the ablation study, the cross-dataset benchmark, and the threshold-calibration analysis. Section~\ref{sec:xai} presents the explainability analysis. Section~\ref{sec:conclusion} discusses limitations and future directions.
-
+We propose \textbf{Q-Shield}, an explainable multimodal framework that unifies both stages. The visual branch employs a Siamese convolutional network trained with contrastive learning to capture structural patterns directly from QR images without decoding. The text branch processes offline-decoded URLs with a transformer encoder---decoding is local-only with no network call or URL execution. A lightweight fusion module integrates both signals along with an explicit undecodability flag, leveraging payload information when available and degrading gracefully to a visual-only detector when decoding fails. Q-Shield is trained and evaluated jointly on heterogeneous corpora to address the cross-dataset gap, and incorporates Grad-CAM and SHAP for dual-layer interpretability of its decisions.
 %% ============================================================
 \section{Related Work}
 \label{sec:related}
-%% ============================================================
 
-\subsection{URL- and Payload-Based Detection}
+\subsection{Payload- and URL-Based Quishing Detection}
 
-The earliest approaches to malicious QR code detection mirror email phishing pipelines: decode the URL, extract lexical and reputation features, classify. Wahsheh and Al-Zahrani~\cite{wahsheh2021secure} proposed a machine learning pipeline operating on URL string features extracted from scanned QR codes. Khalifa et al.~\cite{khalifa2025multiphishnet} introduced MultiPhishNet, a multimodal deep learning architecture combining URL text with visual representations. Nejati et al.~\cite{nejati2026cic} constructed the CIC Trap4Phish corpus, pairing QR images with URL metadata across multiple document formats, and evaluated classical ML classifiers on URL-derived features.
+A common line of work treats a QR code as a carrier for a URL and applies phishing-detection techniques after decoding the payload. Amoah and Hayfron-Acquah~\cite{amoah2022qr} used lexical tokenization with classical ML, while Rafsanjani et al.~\cite{rafsanjani2023qsecr} proposed QsecR, a privacy-aware scanner combining blacklist, lexical, host-based, and content-based URL features; recent work confirms that URL lexical features and deep sequence models remain effective for malicious-link detection~\cite{jayaprakash2024heuristic}. These methods exploit the strong semantic signal of decoded URLs but depend on successful decoding and are limited to URL-like payloads---QR codes may also encode Wi-Fi credentials, payment instructions, or arbitrary text, and payload-based detectors cannot operate when the code is damaged, obfuscated, or intentionally crafted to frustrate decoding.
 
-These methods demonstrate that, given a URL string, classification can achieve high accuracy. Their common limitation is the decoding requirement itself. A QR code must be scanned before URL-level analysis can begin, introducing both the exposure paradox and an incompatibility with non-URL payloads.
+\subsection{Visual and Structural QR Code Analysis}
 
-\subsection{Pixel-Level Visual Analysis}
+To avoid dependence on payload extraction, recent work detects malicious QR codes directly from their visual or structural patterns. Trad and Chehab~\cite{trad2025detecting} showed that raw QR matrix pixels carry discriminative information, with XGBoost reaching AUC above $0.91$ on a generated benign/phishing corpus, demonstrating the feasibility of pre-decode detection. Akram et al.~\cite{akram2025qr} proposed QR\"iS using interpretable structural features for transparency and deployability, and ALFA~\cite{wahid2026alfa} addressed stylized QR codes that evade standard detectors. Tashtoush et al.~\cite{tashtoush2025comparing} compared URL-based ML with image-based deep learning and reported that visual methods reduce exposure risks at the cost of lower performance. Most of these approaches evaluate on a single dataset or narrow generation pipeline, leaving open whether learned visual patterns generalize across QR versions, resolutions, renderers, and sources.
 
-Trad and Chehab~\cite{trad2025detecting} were, to our knowledge, the first to demonstrate that QR codes contain structural signals sufficient for phishing detection \textit{without decoding}. They trained XGBoost and related classifiers directly on the $4{,}761$ raw pixel values of $69\times69$ QR matrices, achieving AUC $0.913$ on a dataset of $9{,}987$ samples. Feature importance analysis revealed that specific pixel positions near alignment patterns carry disproportionate discriminative weight.
+\subsection{Multimodal and Benchmark-Oriented Approaches}
 
-Wahid et al.~\cite{wahid2025qris} extended structural analysis to payment-specific QRIS codes with handcrafted features (module density, pattern regularity, error correction level). Their subsequent work~\cite{wahid2026alfa} evaluated robustness of these features under perturbation.
+A recent direction recognizes that image and payload signals are complementary. Khalifa et al.~\cite{khalifa2025multiphishnet} combined URL and visual representations for phishing detection, while Nejati et al.~\cite{nejati2026cic} released CIC-Trap4Phish, a large multi-format corpus evaluating both CNN image detection and language models over decoded URLs. Existing multimodal studies, however, treat the visual and URL branches as parallel baselines rather than as a single two-stage pipeline, and do not explicitly model the operational distinction between the pre- and post-decode regimes.
 
-Our work builds on the \textit{no-decoding} insight of Trad and Chehab while departing from their methodology in three ways. First, we replace pixel-level classical ML with a deep CNN backbone (MobileNetV2), obtaining representations invariant to image resolution and QR version. Second, we train the backbone through Siamese contrastive learning rather than direct classification, which decouples feature learning from label memorization. Third, we validate on an order of magnitude more samples spanning multiple dataset origins.
+\subsection{Human-Centered and Behavioral Studies}
 
-\subsection{Commercial QR-Phishing Defenses}
+A complementary line of work studies quishing from the user perspective. Sharevski et al.~\cite{sharevski2022phishing} show that users apply less scrutiny to QR codes than to text links; Geisler et al.~\cite{geisler2024hooked} confirm this in field settings, and Weinz et al.~\cite{weinz2025impact} document the organizational impact. Bekavac and Garbin~\cite{bekavac2024qr} study design-oriented countermeasures that make tampering visible at print time. These contributions explain \emph{why} quishing succeeds but do not provide automated detection at scan time, and are therefore complementary to technical detectors such as Q-Shield.
 
-Industry has produced several QR-phishing countermeasures that are worth contrasting with academic work. Commercial URL reputation services such as Google Safe Browsing and Microsoft Defender SmartScreen, as well as consumer-facing tools like Kaspersky QR Scanner and Norton Safe Web, flag known-malicious destinations after the QR code has been decoded and the URL has been looked up in a blocklist. These systems are effective against previously reported phishing campaigns but inherit two of the limitations enumerated above: they require decoding (introducing the exposure paradox), and they are ineffective against zero-day URLs or non-URL payloads. Q-Shield is therefore complementary rather than substitutive: it can act as a pre-scan filter that blocks suspicious QR images \textit{before} they are decoded, after which established blocklist services can handle the residual decoded URLs that pass the visual filter.
+\subsection{Operational QR-Phishing Defenses}
 
-\subsection{Behavioral and Design-Centered Research}
+Commercial defenses rely on URL reputation, blocklists, sandboxing, or secure scanner apps; they inherit the same limitations as URL-based research (decoding requirement, reputation coverage, weakness against zero-day or non-URL payloads). Privacy-aware designs such as QsecR~\cite{rafsanjani2023qsecr} mitigate reliance on blacklists but still operate after decoding.
 
-A parallel line of work studies quishing from the user perspective. Sharevski et al.~\cite{sharevski2022phishing} demonstrated experimentally that users exhibit lower vigilance when scanning QR codes relative to clicking text links. Geisler et al.~\cite{geisler2024hooked} confirmed this finding in field conditions. Weinz et al.~\cite{weinz2025impact} documented the organizational impact of quishing on enterprise security. Bekavac and Garbin~\cite{bekavac2024qr} explored design interventions to make tampering visible at print time. These contributions establish why quishing succeeds but do not provide automated detection mechanisms. Our work is complementary: Q-Shield provides the technical detection layer; behavioral interventions address the human factor.
-
-\subsection{Positioning}
-
-Table~\ref{tab:comparison} situates Q-Shield relative to prior work. No previous method simultaneously (i)~exposes both pre-decode and post-decode intervention layers in a single fused detector, (ii)~employs deep metric learning rather than classical ML or naive classification, (iii)~validates on a heterogeneous cross-dataset benchmark, and (iv)~provides dual-layer explainability. Q-Shield occupies this intersection.
-
-\begin{table*}[!htbp]
-\caption{Comparison of Quishing and QR-Phishing Detection Methods}
-\label{tab:comparison}
-\centering
-\renewcommand{\arraystretch}{1.15}
-\setlength{\tabcolsep}{4pt}
-\small
-\begin{tabular}{lcccccl}
-\toprule
-\textbf{Study} & \textbf{Approach} & \textbf{Pre-decode layer} & \textbf{Post-decode layer} & \textbf{Deep learning} & \textbf{Cross-dataset} & \textbf{Main limitation} \\
-\midrule
-Wahsheh et al.\ (2021)~\cite{wahsheh2021secure} & URL-based ML & No & Yes & No & No & No image layer \\
-Sharevski et al.\ (2022)~\cite{sharevski2022phishing} & User study & N/A & N/A & N/A & No & No automated detection \\
-Geisler et al.\ (2024)~\cite{geisler2024hooked} & Field study & N/A & N/A & N/A & No & No detection model \\
-Bekavac \& Garbin (2024)~\cite{bekavac2024qr} & Design intervention & N/A & N/A & N/A & No & User-side only \\
-Trad et al.\ (2025)~\cite{trad2025detecting} & Pixel-level XGBoost & Yes & No & No & No & No URL layer; fixed QR version \\
-Wahid et al.\ (2025)~\cite{wahid2025qris} & Structural features & Yes & No & No & No & Small dataset \\
-Khalifa et al.\ (2025)~\cite{khalifa2025multiphishnet} & Multimodal DL (URL+img) & Partial & Yes & Yes & No & Image branch ablation absent \\
-Weinz et al.\ (2025)~\cite{weinz2025impact} & Organizational study & N/A & N/A & N/A & No & No detection model \\
-Nejati et al.\ (2026)~\cite{nejati2026cic} & CNN + URL parallel & Yes & Yes & Yes & No & Branches not fused \\
-Wahid et al.\ (2026)~\cite{wahid2026alfa} & Structural + robustness & Yes & No & No & No & Limited generalization \\
-\midrule
-\textbf{This work (Q-Shield)} & \textbf{Siamese CNN $+$ URL transformer (fused)} & \textbf{Yes} & \textbf{Yes} & \textbf{Yes} & \textbf{Yes} & \textbf{See Sec.~\ref{sec:conclusion}} \\
-\bottomrule
-\end{tabular}
-\end{table*}
-
+Q-Shield differs by combining both intervention points within a single fused detector: its visual branch operates before decoding (and remains available when the payload cannot be recovered) and its text branch analyzes the locally decoded URL without executing or fetching the destination. A lightweight fusion module integrates both into a single decision, addressing the main gap in recent literature, which tends to choose between visual and payload-based detection rather than treating them as complementary layers of the same defense.
 %% ============================================================
 \section{Methodology}
 \label{sec:methodology}
-%% ============================================================
 
-Figure~\ref{fig:pipeline} presents the full Q-Shield detection pipeline. The framework has two branches that share the same QR sample but operate at different stages.
+Figure~\ref{fig:pipeline} illustrates the Q-Shield framework: a pre-decode visual branch and a post-decode text branch operate on the same QR sample $x \in \mathbb{R}^{H \times W}$, and their logits $\ell_v, \ell_t$ together with an explicit decoding-success flag $f$ are combined through a late-fusion module $g_{\text{fuse}}$:
+\begin{equation}
+p(y=1\,|\,x) = \sigma\big(g_{\text{fuse}}(\ell_v, \ell_t, f)\big).
+\end{equation}
+The visual branch operates directly on the rendered QR image (no decoding) and remains the only available signal when the payload cannot be recovered; the text branch analyzes the locally decoded URL when available, ensuring robustness under decoding failures.
 
-\textbf{Visual branch.} An input QR image is first preprocessed to a standard 224$\times$224 grayscale tensor (steps 1--2), then passed through a MobileNetV2 backbone whose weights have been pretrained in Phase 1 via Siamese contrastive learning over image pairs (step 3). The backbone produces a 128-dimensional L2-normalized embedding (step 4), which feeds a classification head trained in Phase 2 with focal loss (step 5). At inference, a sigmoid maps the head's logit to a phishing probability (step 6); the Grad-CAM and SHAP branches (step 7) provide per-prediction explanations, and the operating threshold (step 8) is selected from the calibration table in Section~\ref{sec:calibration} according to the target security tolerance. The visual branch operates strictly on the rendered image: no decoding is performed, which makes it the only available layer when the payload cannot be recovered.
-
-\textbf{Text branch.} When the QR can be decoded, we run a local pyzbar pass over the image and feed the resulting URL string to a transformer encoder (Section~\ref{sec:textbranch}). Decoding is local-only: it produces a string from the QR matrix and does not perform any network request, DNS resolution, or URL fetch, so the exposure paradox associated with browser-side scanning does not apply. Samples whose decode fails (low contrast, missing quiet zone, damaged finder pattern) are routed to an \texttt{<UNDECODABLE>} sentinel that the encoder learns as its own token, so undecodability itself becomes a feature.
-
-\textbf{Fusion.} A small MLP combines the visual logit, the text logit, and a binary undecodability flag into the final phishing score (Section~\ref{sec:fusion}). Because both branches output a one-dimensional logit, the fusion head is tiny (3-input MLP, 3 hidden units) and trains in seconds on cached features.
-
-\begin{figure*}[!t]
+\begin{figure*}[htp]
 \centering
-\includegraphics[width=\textwidth]{fig_pipeline_abstract.png}
-\caption{Q-Shield multimodal detection pipeline. Two parallel branches share the same QR sample: a pre-decode visual branch (Siamese MobileNetV2 $\to$ 128-d embedding $\to$ classifier head) and a post-decode text branch (offline pyzbar decoding $\to$ DistilBERT URL classifier). The two logits and an explicit undecodability flag $f$ are combined by a small late-fusion MLP. Training boxes (orange) are active only during the corresponding phase; the explainability block (purple) is applied only at inference on demand.}
+\includegraphics[width=\textwidth]{methodology.png}
+\caption{Q-Shield pipeline. The QR is preprocessed and routed through two parallel branches: a pre-decode visual branch (Siamese MobileNetV2 $\to$ classifier head) and a post-decode text branch (pyzbar offline decoding $\to$ DistilBERT). Both logits and a decoding-success flag are combined by a late-fusion module; Grad-CAM and SHAP provide explainability over the visual branch.}
 \label{fig:pipeline}
 \end{figure*}
 
-\subsection{Problem Formulation}
+\subsection{Visual Branch}
 
-Let $x \in \mathbb{R}^{H \times W}$ denote a grayscale QR code image. Our goal is to learn a classifier $f_\theta: \mathbb{R}^{H \times W} \to [0, 1]$ that maps $x$ to the probability of being malicious, without decoding $x$ into its underlying payload. The function $f_\theta$ factors into two components:
+The visual branch is a MobileNetV2~\cite{sandler2018mobilenetv2} backbone $h_\psi$ adapted for grayscale input ($3\to 1$ channels), followed by a projection head producing a 128-dimensional L2-normalized embedding. Training proceeds in two phases. \textbf{Phase 1 (contrastive pretraining):} the backbone is trained in a Siamese configuration with margin-based contrastive loss
 \begin{equation}
-f_\theta(x) = \sigma\big(g_\phi \circ h_\psi(x)\big),
+\mathcal{L}_{\text{con}} = (1-y)\frac{d^2}{2} + y\frac{\max(0, m - d)^2}{2},
 \end{equation}
-where $h_\psi: \mathbb{R}^{H \times W} \to \mathbb{R}^{d}$ is a convolutional embedding function producing a $d$-dimensional representation, $g_\phi: \mathbb{R}^{d} \to \mathbb{R}$ is a classification head producing a logit, and $\sigma$ is the sigmoid nonlinearity. We train $h_\psi$ and $g_\phi$ in two phases.
-
-\subsection{Siamese Backbone}
-
-The backbone $h_\psi$ is MobileNetV2~\cite{sandler2018mobilenetv2} with three modifications. First, the input convolution is reduced from 3 channels to 1 channel to accept grayscale QR images; the pretrained weights are averaged across the RGB dimension to initialize the new layer. Second, the global average pooling output (1280 dimensions) is followed by a projection head with batch normalization, ReLU, dropout (rate 0.35), and a linear projection to $d = 128$. Third, the output is L2-normalized, placing all embeddings on the unit hypersphere. With these modifications, $h_\psi$ has 3.08M parameters.
-
-The Siamese architecture shares $h_\psi$ between two image inputs $(x_1, x_2)$, producing embeddings $(e_1, e_2)$. We train the backbone with contrastive loss~\cite{chopra2005learning}, the canonical choice for Siamese metric learning as surveyed in recent reviews of deep learning objectives~\cite{elharrouss2024lossfunctions}:
+where $d$ is the embedding distance and $m=1.5$, optimized for up to 40 epochs with AdamW, cosine annealing, and early stopping; horizontal flipping is the only augmentation, since rotation would break QR orientation semantics. The contrastive validation loss reaches its minimum at epoch 8 ($0.253$) and pair-classification validation accuracy stabilizes near $71\%$ (training $91.8\%$). \textbf{Phase 2 (supervised fine-tuning):} a four-layer classification head $g_\phi$ maps the embedding to a logit, trained with focal loss~\cite{lin2017focal}
 \begin{equation}
-\mathcal{L}_{\text{con}}(e_1, e_2, y) = (1-y)\frac{d^2}{2} + y\frac{\max(0, m - d)^2}{2},
+\mathcal{L}_{\text{focal}} = -\alpha (1-p_y)^\gamma \log p_y,
 \end{equation}
-where $d = \|e_1 - e_2\|_2$, $y = 0$ for same-class pairs and $y = 1$ for different-class pairs, and $m = 1.5$ is the margin.
+with $\gamma=2$ and $\alpha=0.5$. The backbone is frozen for the first five epochs and then unfrozen for end-to-end optimization; Figure~\ref{fig:phase2} shows the Phase 2 dynamics and justifies the final checkpoint. At test time, horizontal-flip test-time augmentation and a two-seed ensemble further improve robustness without modifying the trained parameters.
 
-The loss has an intuitive interpretation. For same-class pairs ($y=0$), the term $d^2/2$ penalizes any residual distance, pulling embeddings of benign--benign or phishing--phishing pairs together. For different-class pairs ($y=1$), the term $\max(0, m-d)^2/2$ activates only if the distance is below the margin, pushing benign--phishing pairs apart until they satisfy $d \geq m$. The margin value $m = 1.5$ was selected by grid search over $\{0.5, 1.0, 1.5, 2.0, 2.5\}$; lower margins induced premature convergence (underfitting at $m=1.0$) and higher margins slowed convergence without measurable gain. We chose contrastive over triplet loss for simplicity of batch construction (pairs are easier to sample uniformly than semi-hard triplets) and because contrastive supervision sufficed to produce an inter- to intra-class distance ratio of $1.94$ (Section~\ref{sec:xai}).
-
-\subsection{Phase 1: Contrastive Pretraining}
-
-Training pairs are sampled uniformly: each batch contains an equal split of same-class and different-class pairs, with class (benign or phishing) chosen uniformly at random. We train for up to 40 epochs with 60{,}000 pairs per epoch using AdamW (learning rate $2 \times 10^{-4}$, weight decay $2 \times 10^{-4}$) and cosine annealing with warm restarts every 15 epochs. Early stopping triggers after 8 epochs without improvement in validation contrastive loss. Horizontal flip augmentation is applied with probability 0.5; rotation is intentionally avoided because QR codes contain semantically meaningful orientation (finder patterns anchor the top-left, top-right, and bottom-left corners).
-
-\subsection{Phase 2: Supervised Classification with Focal Loss}
-
-The classification head $g_\phi$ stacks four linear layers with batch normalization, ReLU, and dropout: 128$\to$512$\to$128$\to$32$\to$1. We train with focal loss~\cite{lin2017focal}, which recent surveys~\cite{elharrouss2024lossfunctions} recommend over plain binary cross-entropy in settings where misclassification costs are asymmetric and hard examples dominate the error budget:
-\begin{equation}
-\mathcal{L}_{\text{focal}}(p, y) = -\alpha_y (1-p_y)^\gamma \log p_y,
-\end{equation}
-where $p_y$ is the predicted probability of the true class, $\alpha = 0.5$ (classes are approximately balanced after the combined-dataset sampling described below) and $\gamma = 2$. The factor $(1 - p_y)^\gamma$ down-weights easy examples (where $p_y$ is already high) and up-weights hard ones (where $p_y$ is small), focusing gradient signal on the phishing samples that the model currently misclassifies. In security-critical settings this is exactly the desired behavior: a missed phishing QR exposes the user to the attack, whereas a false positive merely triggers a benign warning. Our ablation confirms the practical effect: replacing focal loss with BCE raises false-negative rate from $0.202$ to $0.271$ with only a marginal change in AUC (Section~\ref{sec:results}, Table~\ref{tab:ablation}).
-
-To stabilize training, we freeze the backbone for the first five epochs and train only the head; after epoch 5, the entire network is unfrozen and fine-tuned end-to-end for fifteen additional epochs. Figures~\ref{fig:phase1} and~\ref{fig:phase2} visualize the training dynamics of both phases and justify the choice of best checkpoint.
-
-\begin{figure}[!htbp]
-\centering
-\includegraphics[width=\columnwidth]{fig_phase1_curves.png}
-\caption{Phase 1 (Siamese contrastive pretraining) training dynamics over 16 epochs. (a) Loss: validation loss reaches its minimum at epoch 8 ($0.253$); a cosine warm restart at epoch 15 briefly inflates train loss before recovery. (b) Pair-classification accuracy: training accuracy climbs steadily to $91.8\%$ while validation plateaus around $71\%$, indicating that the contrastive objective learns a discriminative metric without catastrophic overfitting.}
-\label{fig:phase1}
-\end{figure}
-
-\begin{figure}[!htbp]
-\centering
-\includegraphics[width=\columnwidth]{fig_phase2_curves.png}
-\caption{Phase 2 (supervised fine-tuning with focal loss) training dynamics over 20 epochs. Purple shading marks the first 5 epochs with frozen backbone; green shading marks end-to-end fine-tuning. (a) Loss: validation loss reaches its minimum at epoch 8 ($0.053$) before diverging from training, a textbook overfitting signature mitigated by early stopping. (b) Validation AUC: peaks at $0.8962$ at epoch 8 (red star), corroborating the loss-based selection. Training beyond this point inflates train-val gap without AUC gain.}
+\begin{figure}[htp]
+\centering\includegraphics[width=\columnwidth]{fig_phase2_curves.png}
+\caption{Phase 2 (focal-loss supervised fine-tuning) dynamics. Purple shading: epochs 1--5 with frozen backbone; green: epochs 6--20 end-to-end. (a) Validation loss reaches its minimum at epoch 8 ($0.053$), after which the train--val gap grows. (b) Validation AUC peaks at $0.8962$ at the same epoch (red marker), corroborating the early-stopping choice.}
 \label{fig:phase2}
 \end{figure}
 
-\subsection{Text Branch: Offline-Decoded URL Classifier}
+\subsection{Text Branch}
 \label{sec:textbranch}
 
-The text branch consumes the URL string recovered by an offline decoding pass over the QR image. The decoding stage is implemented with the pyzbar binding to libzbar, which reads the module pattern of the QR and returns the encoded payload as a UTF-8 string. This operation is local, deterministic, and does not perform any network call: it is the equivalent of reading text from a file on disk, and it cannot trigger the malicious behaviour associated with browser-side QR scanners. The classifier therefore inherits no exposure risk from this stage.
+The text branch decodes the QR matrix locally using pyzbar---producing a UTF-8 string with no network call, DNS resolution, or URL fetch---and feeds the result to a DistilBERT transformer~\cite{sanh2019distilbert} (96-token max length, covering the observed URL distribution) that outputs a classification logit. When decoding fails, samples are mapped to a \texttt{<UNDECODABLE>} sentinel token so the model learns decoding failure itself as an informative feature. Training uses focal loss with AdamW and a warmup schedule, converging within a few epochs.
 
-The encoder is a transformer model fine-tuned for binary phishing classification. We use DistilBERT~\cite{sanh2019distilbert} (66M parameters, $66\,$MB on disk) as the default backbone, with the [CLS] hidden state passed through dropout and a linear classifier of dimension $\text{hidden} \to 1$. Each input URL is tokenized with the model's pretrained tokenizer at maximum length 96, which covers the full URL distribution observed across both corpora. Samples whose decode fails are encoded as a single special token \texttt{<UNDECODABLE>}; the encoder thus learns a separate representation for the undecodable case, which is itself a phishing-relevant signal because adversaries occasionally generate QRs with damaged finder patterns to bypass scanners while remaining functional in some apps.
-
-Training uses the same focal loss as the visual branch ($\gamma=2$, $\alpha=0.5$) for parity, AdamW with learning rate $2\times10^{-5}$ and weight decay $10^{-2}$, and a linear warmup-then-decay schedule with $10\%$ warmup. We train for three epochs on the train split (roughly 80k URLs); convergence is fast because URL classification is well within DistilBERT's pretraining domain. The trained encoder produces a one-dimensional logit per URL, which feeds the fusion head described next.
-
-\subsection{Late Fusion}
+\subsection{Fusion Module}
 \label{sec:fusion}
 
-The fusion head consumes a three-dimensional vector $\mathbf{z} = [\ell_v, \ell_t, f] \in \mathbb{R}^3$, where $\ell_v$ is the visual branch logit, $\ell_t$ is the text branch logit, and $f \in \{0, 1\}$ is the undecodability flag. A two-layer MLP $g_{\text{fuse}}: \mathbb{R}^3 \to \mathbb{R}$ with $16$ hidden units and ReLU activation maps $\mathbf{z}$ to the fused logit, and a sigmoid produces the final phishing probability. The fusion head has $81$ trainable parameters; both branch encoders are frozen during fusion training, so the entire fusion stage reduces to a tabular classification problem on cached features. We train with focal loss for $20$ epochs, AdamW (lr $10^{-3}$, wd $10^{-3}$), and report the checkpoint that maximises validation AUC.
+The two branches are combined through late fusion: the input vector $\mathbf{z} = [\ell_v, \ell_t, f]$ is mapped to a final logit by a lightweight MLP and converted to a probability via sigmoid. The fusion module is trained with both branch encoders frozen, reducing the problem to low-dimensional classification. Logit-level fusion is preferred over feature-level fusion because it directly exposes each modality's contribution and keeps the head trivial to train.
 
-We chose logit-level fusion over feature-level fusion (concatenating the 128-d visual embedding with the 768-d text pooled output) for two reasons. First, the logit-level form is interpretable: the learned coefficients quantify how much the fused decision relies on each branch and on the undecodability flag, an explanation that is directly actionable for security analysts. Second, the logit-level form decouples the fusion stage from the branch backbones at inference time. We report the feature-level variant as an ablation.
+%% ============================================================
+\section{Experimental Results}
+\label{sec:results}
 
-\subsection{Inference: TTA and Ensembling}
-\label{sec:inference-method}
+\subsection{Datasets}
 
-At inference we apply two refinements that improve accuracy without modifying the architecture or training procedure. First, \textit{horizontal-flip test-time augmentation (TTA)}: each input image $x$ is also evaluated as its horizontal flip $\tilde{x}$, and the final probability is the mean of the two passes, $\hat{p}(x) = \tfrac{1}{2}\big(\sigma(g_\phi h_\psi(x)) + \sigma(g_\phi h_\psi(\tilde{x}))\big)$. Although horizontal flipping is omitted from training augmentation only for vertical orientation, the model still benefits at test time from averaging two views of the same QR; the L/R asymmetry in the CIC corpus (Section~\ref{sec:xai}) makes this gain concrete. Second, a \textit{two-seed ensemble}: we train two Phase-1+Phase-2 pipelines that share data splits but differ in weight initialization and pair-sampling stochasticity (seeds $42$ and $7$). At inference, probabilities from the two models---each computed with TTA---are averaged. Because the data splits are identical, the diversity comes purely from optimization stochasticity, which is sufficient to decorrelate predictions and yield an additive gain over either model alone. The ensemble adds a $4\times$ inference cost (two models, two TTA passes each), characterized in Section~\ref{sec:inference}.
+We evaluate Q-Shield on two complementary corpora (Table~\ref{tab:datasets}): the dataset of Trad et al.~\cite{trad2025detecting}, consisting of fixed $69\times69$ binary QR matrices (controlled, homogeneous), and CIC-Trap4Phish~\cite{nejati2026cic}, with over one million real-world QR images at variable resolutions and rendering.
 
-\subsection{Training Configuration}
 
-The full hyperparameter set used to produce the Q-Shield checkpoint is the following. \textit{Backbone}: MobileNetV2 with ImageNet initialization, single-channel input at $224{\times}224$, projection head with dropout $0.35$, output embedding $128$-d L2-normalized. \textit{Classifier head}: $128{\to}512{\to}128{\to}32{\to}1$ with dropouts $0.4 / 0.3 / 0.2$. \textit{Phase 1}: contrastive loss with margin $m=1.5$ (selected by grid search), $60{,}000$ training pairs and $8{,}000$ validation pairs per epoch, AdamW with learning rate $2\times10^{-4}$ and weight decay $2\times10^{-4}$, cosine annealing with warm restarts of period $15$, up to $40$ epochs with patience $8$ on validation contrastive loss. \textit{Phase 2}: focal loss ($\gamma=2$, $\alpha=0.5$), $5$ epochs with frozen backbone (head learning rate $1\times10^{-3}$, weight decay $1\times10^{-4}$) followed by $15$ epochs of end-to-end fine-tuning (learning rate $1\times10^{-4}$, weight decay $2\times10^{-4}$), early stopping on validation AUC with patience $3$. \textit{Augmentation}: horizontal flip with $p=0.5$ in both phases; rotation and vertical flip are intentionally excluded because QR finder patterns encode orientation, so rotating a QR image changes its semantics and would inject label noise. All values are reproducible from the public notebooks.
-
-\begin{table}[!htbp]
+\begin{table}[htp]
 \caption{Dataset Statistics}
 \label{tab:datasets}
 \centering
-\renewcommand{\arraystretch}{1.15}
-\resizebox{\columnwidth}{!}{% 
+\small
 \begin{tabular}{lcc}
 \toprule
-\textbf{Property} & \textbf{Trad et al.~\cite{trad2025detecting}} & \textbf{CIC Trap4Phish 2025~\cite{nejati2026cic}} \\
+\textbf{Dataset} & \textbf{Trad} & \textbf{CIC-Trap4Phish} \\
 \midrule
-Total samples        & 9{,}987        & 1{,}005{,}738 \\
-Benign               & 5{,}005        & 429{,}976     \\
-Phishing             & 4{,}982        & 575{,}762     \\
-Class balance        & 50.1/49.9\%    & 42.8/57.2\%   \\
-Format               & Binary matrix  & Grayscale PNG \\
-Native resolution    & $69\times69$ (fixed) & 114--582\,px \\
-QR version coverage  & V13 only       & Multiple (V5--V30) \\
-URL source (benign)  & Alexa top-1M   & Majestic Million \\
-URL source (phishing)& PhishTank      & PhishTank (independent crawl) \\
+Total samples & 9,987 & 1,005,738 \\
+Format & Binary matrix & Grayscale PNG \\
+Resolution & $69\times69$ & 114--582 px \\
+QR versions & V13 & V5--V30 \\
 \bottomrule
-\end{tabular}%
-}
+\end{tabular}
 \end{table}
 
-For computational tractability we draw a stratified sample of $50{,}000$ QR codes per class from the CIC corpus, preserving its natural class proportions. We form 80/20 train/validation splits within each dataset and combine the validation splits of both datasets to obtain a joint evaluation set of $21{,}998$ samples. Training uses the combined training splits.
+For tractability we draw a stratified subset of $50{,}000$ samples per class from CIC; each dataset is then split 80/20 and the validation splits combined into a joint set of $21{,}998$ samples. Training uses the combined training splits to promote cross-domain robustness. The offline pyzbar decoder recovers a URL string from $100\%$ of Trad samples and $95.7\%$ of CIC samples; the remaining $\sim$$4.3\%$ are routed through the \texttt{<UNDECODABLE>} sentinel, where the visual branch is the only available signal.
 
-%% ============================================================
-\section{Results}
-\label{sec:results}
-%% ============================================================
+\subsection{Experiment 1: Visual Branch Performance}
 
-\subsection{Visual Branch Results}
+The first experiment evaluates the effectiveness of the visual branch in isolation, which represents the system's fallback when QR decoding fails. Results are reported in Table~\ref{tab:visual}.
 
-We first characterize the visual branch in isolation; the multimodal comparison that produces the paper's headline result is reported in Section~\ref{sec:multimodal-results}. Table~\ref{tab:main} summarizes the visual-only configurations on the joint $21{,}998$-sample validation set. The strongest visual configuration---a two-seed ensemble of Siamese-contrastive backbones combined with horizontal-flip test-time augmentation (TTA)---achieves AUC $0.9146$, recall $0.801$, F1 $0.835$, and FNR $0.199$. A single-model variant (single seed, no TTA) achieves AUC $0.8962$ at one-quarter of the inference cost, providing a configurable accuracy/latency trade-off when the visual branch must operate alone. Both variants outperform the handcrafted feature baselines by a wide margin ($+0.10$ to $+0.11$ AUC), and the visual ensemble matches the previously reported SOTA of Trad et al.~\cite{trad2025detecting} ($+0.001$ AUC) on a benchmark eleven times larger and visually heterogeneous. The visual branch is the operative signal whenever the QR payload cannot be decoded; how well it performs in isolation therefore directly bounds the system's worst-case accuracy.
-
-\begin{table}[!htbp]
-\caption{Visual Branch on Combined Validation Set (n=21{,}998)}
-\label{tab:main}
+\begin{table}[htp]
+\caption{Visual Branch Performance (n=21,998)}
+\label{tab:visual}
 \centering
-\renewcommand{\arraystretch}{1.2}
-\resizebox{\columnwidth}{!}{% <--- Ajuste al ancho de la columna
+\small
 \begin{tabular}{lccccc}
 \toprule
 \textbf{Method} & \textbf{AUC} & \textbf{Prec.} & \textbf{Recall} & \textbf{F1} & \textbf{FNR} \\
 \midrule
-\multicolumn{6}{l}{\textit{Baselines (our implementation)}} \\
-25 feat + Random Forest  & 0.813 & 0.794 & 0.660 & 0.720 & 0.340 \\
-25 feat + XGBoost        & 0.810 & 0.785 & 0.664 & 0.720 & 0.336 \\
-25 feat + LightGBM       & 0.808 & 0.771 & 0.670 & 0.717 & 0.330 \\
-\midrule
-\multicolumn{6}{l}{\textit{Reported (prior work, different eval set)}} \\
-Trad et al.~\cite{trad2025detecting}   & 0.913 & --    & --    & 0.890 & --    \\
-(n=1{,}998, single format)             &       &       &       &       &       \\
-\midrule
-\multicolumn{6}{l}{\textit{Our deep learning approach}} \\
-Q-Shield (single seed, no TTA)         & 0.8962 & 0.844 & 0.798 & 0.821 & 0.202 \\
-Q-Shield (single seed, $+$TTA)         & 0.9053 & 0.853 & 0.799 & 0.825 & 0.201 \\
-\textbf{Q-Shield (ensemble $+$ TTA)}   & \textbf{0.9146} & \textbf{0.872} & \textbf{0.801} & \textbf{0.835} & \textbf{0.199} \\
+Handcrafted + RF & 0.813 & 0.794 & 0.660 & 0.720 & 0.340 \\
+Q-Shield (single seed) & 0.8962 & 0.844 & 0.798 & 0.821 & 0.202 \\
+\textbf{Q-Shield (2-seed + TTA)} & \textbf{0.9146} & \textbf{0.872} & \textbf{0.801} & \textbf{0.835} & \textbf{0.199} \\
 \bottomrule
-\end{tabular}%
-}
+\end{tabular}
 \end{table}
-Three observations are worth emphasizing about the visual branch. First, the handcrafted feature baselines are identical across RF, XGBoost, and LightGBM to within $0.005$ AUC, suggesting that the features themselves are the bottleneck rather than the classifier choice. Second, the Siamese-based deep learning approach outperforms these baselines by a wide margin ($+0.10$ AUC for the single-model variant) and the ensemble configuration matches the previously reported SOTA on an evaluation set an order of magnitude larger ($21{,}998$ vs.\ $1{,}998$ samples) and drawn from mixed-resolution images spanning multiple QR versions---a regime the pixel-level baseline was not designed for. Third, the per-model parameter count is $3.08$M against Trad's $\sim$$4{,}761$ raw pixel features fed to a tree ensemble; the two-model ensemble totals $6.16$M parameters, which remains compact for mobile deployment of the visual fallback.
 
-The TTA gain is robust: averaging probabilities from the original image and its horizontal flip adds $+0.91$ pp AUC over the single-pass model. The two-seed ensemble (seeds 42 and 7), in turn, adds $+0.93$ pp on top of the single-seed TTA. Both improvements are applied at inference only and require no architectural change. The training-time and inference-time costs of these refinements are quantified in Section~\ref{sec:inference}.
+The strongest configuration, combining a two-seed ensemble with test-time augmentation (TTA), achieves an AUC of 0.9146 and an FNR of 0.199. A single-model configuration achieves AUC 0.8962 with lower computational cost, providing a practical trade-off for deployment scenarios with limited resources.
 
-\subsection{Multimodal Comparison}
-\label{sec:multimodal-results}
+Compared to handcrafted feature baselines, the deep learning approach improves AUC by approximately 0.10, demonstrating the advantage of learned representations. Furthermore, the ensemble configuration matches the performance reported by Trad et al.~\cite{trad2025detecting} while operating on a dataset an order of magnitude larger and more heterogeneous.
 
-Table~\ref{tab:multimodal} reports the headline experimental result. Visual-only, text-only, and fused configurations are evaluated on the same 21{,}998-sample joint validation set. The visual-only row reproduces the single-seed Q-Shield from Table~\ref{tab:main} for direct comparability; the text-only row uses the DistilBERT encoder fine-tuned on the offline-decoded URLs (Section~\ref{sec:textbranch}); the fused row uses the logit-level MLP described in Section~\ref{sec:fusion}. The fused configuration achieves AUC $0.9749$, F1 $0.936$, and FNR $0.057$, exceeding Trad et al.'s $0.913$ AUC by $+6.16$ pp on a benchmark eleven times larger and exceeding the visual-only baseline by $+7.87$ pp AUC and $-14.6$ pp FNR. The default-threshold FNR of $0.057$ is already below the conventional $\leq 10\%$ security tolerance, eliminating the need for the threshold calibration that the visual-only model required (Section~\ref{sec:calibration}).
+These results establish the visual branch as a strong standalone detector and define the lower bound of system performance in the absence of decoding.
 
-\begin{table}[!htbp]
-\caption{Visual / Text / Fused Configurations (n=21{,}998)}
+\subsection{Experiment 2: Multimodal Fusion Performance}
+
+The second experiment evaluates the full multimodal framework, comparing visual-only, text-only, and fused configurations, as shown in Table~\ref{tab:multimodal}.
+
+\begin{table}[htp]
+\caption{Visual vs Text vs Fusion (n=21,998)}
 \label{tab:multimodal}
 \centering
-\renewcommand{\arraystretch}{1.2}
-\resizebox{\columnwidth}{!}{%
+\small
 \begin{tabular}{lccccc}
 \toprule
 \textbf{Branch} & \textbf{AUC} & \textbf{Prec.} & \textbf{Recall} & \textbf{F1} & \textbf{FNR} \\
 \midrule
-Visual only (single seed)        & 0.8962 & 0.844 & 0.798 & 0.821 & 0.202 \\
-Text only (DistilBERT on URLs)   & 0.9592 & 0.923 & 0.931 & 0.927 & 0.069 \\
-\textbf{Fusion (logit MLP)}      & \textbf{0.9749} & \textbf{0.928} & \textbf{0.943} & \textbf{0.936} & \textbf{0.057} \\
+Visual & 0.8962 & 0.844 & 0.798 & 0.821 & 0.202 \\
+Text & 0.9592 & 0.923 & 0.931 & 0.927 & 0.069 \\
+\textbf{Fusion} & \textbf{0.9749} & \textbf{0.928} & \textbf{0.943} & \textbf{0.936} & \textbf{0.057} \\
 \bottomrule
-\end{tabular}%
-}
-\par\vspace{2pt}
-{\footnotesize Calibration of the fused model: Brier $0.054$, ECE $0.038$, both improved by roughly a factor of three over the visual-only baseline (Brier $0.146$, ECE $0.133$).}
+\end{tabular}
 \end{table}
 
-Two reading rules apply to this table. First, the text branch is upper-bounded by the fraction of QRs that decode successfully---decode failures are charged to the text-only column as $P(\text{phish}) = 0.5$, the prior, which simulates a system that has no signal to act on. Second, the fusion row is the operationally relevant configuration: it inherits the text-branch's accuracy when decoding succeeds and falls back to the visual-branch's score when it does not. The undecodability flag in the fusion input lets the head learn this fallback behaviour without manual logic.
+The fused model achieves an AUC of $0.9749$, F1 score of $0.936$, and FNR of $0.057$, outperforming individual branches. Relative to the visual-only model, fusion improves AUC by $7.87$ percentage points and reduces false negatives by a factor of $3.5$. The text branch alone is competitive due to the semantic richness of decoded URLs, but it is inherently limited by decoding success: on the $\sim$$4.3\%$ undecodable subset, text-only prediction collapses to the constant \texttt{<UNDECODABLE>} embedding and the visual branch becomes the sole discriminative signal. The fusion model resolves this through the explicit undecodability flag $f$, learning when to defer to the visual fallback without manual rule design; while the aggregate AUC gain over text-only is modest ($+0.0157$), it is concentrated in this operationally critical regime.
 
-Figure~\ref{fig:cm_roc} visualizes the default-threshold decision behavior of the fused configuration. The confusion matrix reveals that at $p=0.5$, Q-Shield correctly classifies $10{,}201$ of $11{,}001$ benign samples and $10{,}374$ of $10{,}997$ phishing samples, with only $623$ false negatives---a $3.5\times$ reduction relative to the visual ensemble in Table~\ref{tab:main}. The ROC curve confirms the strong discrimination captured by AUC $= 0.9749$.
-
-\begin{figure*}[!t]
-\centering
-\includegraphics[width=0.88\textwidth]{fig_confusion_roc.png}
-\caption{(a) Confusion matrix of the full multimodal Q-Shield configuration (visual + text + fusion) on the combined $21{,}998$-sample validation set at default threshold $p=0.5$: TN$=10{,}201$, FP$=800$, FN$=623$, TP$=10{,}374$. (b) ROC curve corresponding to AUC $=0.9749$. The default operating point already meets the FNR $\leq 10\%$ security tolerance (FNR $= 0.057$) without recourse to threshold calibration.}
-\label{fig:cm_roc}
-\end{figure*}
-
-\subsection{Branch-by-Branch Comparison}
-
-Figure~\ref{fig:branch_compare} reports the same numbers in Table~\ref{tab:multimodal} as a grouped bar chart, with one bar per metric (AUC, F1, recall, $1{-}\text{FNR}$, $1{-}\text{ECE}$) for each of the three branches. The visual gap between the visual-only baseline and the text branch is the largest single jump; the fusion adds a smaller but consistent margin on top, and the calibration metrics are where the fusion's contribution is most visible.
+Figure~\ref{fig:cm_roc} further illustrates the decision behavior of the fused model, confirming strong discrimination and balanced classification performance at the default threshold.
 
 \begin{figure}[!htbp]
 \centering
-\includegraphics[width=\columnwidth]{fig_branch_comparison.png}
-\caption{Per-branch comparison on the joint validation set (n=$21{,}998$). Bars report the metrics on which higher is better; ECE is plotted as $1-\text{ECE}$ for visual consistency. Fusion (logit MLP) dominates each metric; visual alone is reported because it is the only signal available when the QR cannot be decoded.}
-\label{fig:branch_compare}
+\includegraphics[width=\columnwidth]{fig_confusion_roc.png}
+\caption{Confusion matrix and ROC curve of the fused model. The default threshold achieves FNR $=0.057$, satisfying security requirements without calibration.}
+\label{fig:cm_roc}
 \end{figure}
+\subsection{Experiment 3: Ablation Study}
 
-\subsection{Benchmarking and Gaps Closed}
-\label{sec:benchmark}
-
-Table~\ref{tab:gaps} summarizes the key capabilities Q-Shield inherits from or extends beyond prior work. Four gaps remain unresolved in the literature we reviewed, each of which Q-Shield closes.
-
-\begin{table*}[!t] % <--- CAMBIO AQUÍ: Solo [!t] para doble columna
-\caption{Capability Benchmark vs.\ Representative Prior Work}
-\label{tab:gaps}
-\centering
-\small
-\renewcommand{\arraystretch}{1.05}
-\setlength{\tabcolsep}{6pt}
-\begin{tabular}{lccc}
-\toprule
-\textbf{Capability} & \textbf{Trad et al.~\cite{trad2025detecting}} & \textbf{CIC Trap4Phish~\cite{nejati2026cic}} & \textbf{Q-Shield (ours)} \\
-\midrule
-Pre-decode visual layer                     & Yes       & Yes       & \textbf{Yes} \\
-Post-decode URL layer                       & No        & Yes       & \textbf{Yes} \\
-Branches fused into a single decision       & --        & No        & \textbf{Yes} \\
-Deep learning backbone                      & No        & Yes       & \textbf{Yes} \\
-Metric learning (Siamese)                   & No        & No        & \textbf{Yes} \\
-Multi-dataset validation                    & No        & No        & \textbf{Yes} \\
-Cross-dataset AUC reported                  & --        & --        & \textbf{0.91} \\
-Multiple QR versions in test set            & No        & Yes       & \textbf{Yes} \\
-Multiple image formats in test set          & No        & No        & \textbf{Yes} \\
-Dual explainability (Grad-CAM + SHAP)       & No        & No        & \textbf{Yes} \\
-Threshold calibration for security          & No        & No        & \textbf{Yes} \\
-Edge-deployable ($<5$M params per model)    & --        & No        & \textbf{Yes ($3.08$M)} \\
-Evaluation samples                          & $2$K      & --        & \textbf{$22$K} \\
-Best visual-branch AUC reported             & $0.913$   & $0.88$      & \textbf{$0.915$} \\
-Best fused-pipeline AUC reported            & --        & --          & \textbf{$0.975$} \\
-Default-threshold FNR reported              & --        & --          & \textbf{$0.057$} \\
-\bottomrule
-\end{tabular}
-\\[2pt]
-{\footnotesize CIC's text-only branch (LLMs over decoded URLs) reaches F1 $0.97$--$0.99$ in their report but is not reported with a single AUC and is not fused with the visual branch in their pipeline.}
-\end{table*}
-
-Three gaps deserve explicit attention. The numbers reported in Table~\ref{tab:gaps} correspond to the visual branch in isolation; the multimodal fused configuration is reported separately in Section~\ref{sec:multimodal-results} once the text branch is added on top. \textbf{Gap 1: cross-dataset evaluation.} Neither Trad nor CIC report performance when the model is trained on one corpus and tested on the other. Our experiments (Table~\ref{tab:ablation}(c)) show that under such a zero-shot transfer protocol, models trained on a single dataset degrade to near-random performance (AUC $0.52$) or to classifier collapse (AUC $0.72$ with $\text{FNR} = 0$). Q-Shield's combined-training design holds $0.896$ AUC (single-seed) or $0.915$ AUC (full ensemble) across the joint test distribution---a capability that cannot be directly compared to prior work because prior work did not measure it. \textbf{Gap 2: operational FNR guarantees.} Prior work reports a single operating point. We show (Section~\ref{sec:calibration}) that Q-Shield admits a calibrated threshold achieving FNR $\leq 0.10$, the conventional security tolerance. \textbf{Gap 3: interpretability at both pixel and feature levels.} Prior structural approaches provide either feature importance (Trad) or handcrafted interpretability (Wahid et al.) but not both spatial and latent-space explanations. Q-Shield integrates Grad-CAM over the convolutional backbone with SHAP over the learned embedding dimensions, and we validate the spatial attention pattern across both datasets separately to rule out dataset-specific artifacts.
-
-\subsection{Ablation Study}
-
-Table~\ref{tab:ablation} reports an ablation over five variants of the full pipeline. Each variant isolates a single design decision.
+The third experiment analyzes the contribution of key design components through controlled ablations (Table~\ref{tab:ablation}).
 
 \begin{table}[!htbp]
-\caption{Ablation Study and Cross-Dataset Generalization (combined validation set, n=$21{,}998$)}
+\caption{Ablation Study}
 \label{tab:ablation}
 \centering
 \small
-\renewcommand{\arraystretch}{1.1}
-% \setlength{\tabcolsep}{6pt} 
-\resizebox{\columnwidth}{!}{% 
 \begin{tabular}{lcccc}
 \toprule
-\textbf{Configuration} & \textbf{AUC} & \textbf{Recall} & \textbf{F1} & \textbf{FNR} \\
+\textbf{Config} & \textbf{AUC} & \textbf{Recall} & \textbf{F1} & \textbf{FNR} \\
 \midrule
-\multicolumn{5}{l}{\textit{(a) Architecture ablation (single-seed, no TTA)}} \\
-\textbf{A1: Full Q-Shield (single seed)} & \textbf{0.8962} & \textbf{0.7983} & \textbf{0.8207} & \textbf{0.2017} \\
-A2: No Siamese pretraining$^\dagger$ & 0.8764 & 0.7330 & 0.7851 & 0.2670 \\
-A3: BCE loss (no focal)$^\dagger$  & 0.8771 & 0.7295 & 0.7857 & 0.2705 \\
-A4: No frozen start$^\dagger$      & 0.8810 & 0.7702 & 0.8006 & 0.2298 \\
-A5: Small head ($256\to64\to1$)$^\dagger$ & 0.8752 & 0.7710 & 0.7943 & 0.2290 \\
-\midrule
-\multicolumn{5}{l}{\textit{(b) Inference-time refinements (cumulative)}} \\
-B0: Single seed (= A1)             & 0.8962 & 0.7983 & 0.8207 & 0.2017 \\
-B1: $+$ TTA (horizontal flip avg)  & 0.9053 & 0.7991 & 0.8250 & 0.2009 \\
-\textbf{B2: $+$ 2-seed ensemble}   & \textbf{0.9146} & \textbf{0.8007} & \textbf{0.8346} & \textbf{0.1993} \\
-\midrule
-\multicolumn{5}{l}{\textit{(c) Cross-dataset generalization (single seed, no TTA)}} \\
-CV1: Train CIC $\to$ Test Trad     & 0.7178 & 1.0000 & 0.6658 & 0.0000 \\
-CV2: Train Trad $\to$ Test CIC     & 0.5181 & 0.5083 & 0.5166 & 0.4917 \\
-CV3: Combined (= A1)               & 0.8962 & 0.7983 & 0.8207 & 0.2017 \\
+Full model & 0.8962 & 0.798 & 0.821 & 0.202 \\
+No Siamese & 0.8764 & 0.733 & 0.785 & 0.267 \\
+No focal loss & 0.8771 & 0.729 & 0.786 & 0.271 \\
 \bottomrule
-\end{tabular}%
-}
-\par\vspace{3pt}
-{\footnotesize $^{\dagger}$Ablation variants A2--A5 were trained on a stratified $40\%$ subsample of the training corpus (${\sim}24{,}000$ pairs) to fit multiple runs within the available compute budget. A1 reports the full-training single-seed model. The architecture ablation in panel (a) and the cross-dataset analysis in panel (c) deliberately use the single-seed, no-TTA baseline so that each row isolates one design decision; panel (b) reports the cumulative inference-time improvements that produce the headline result reported in Table~\ref{tab:main}.}
+\end{tabular}
 \end{table}
-Several patterns emerge from Table~\ref{tab:ablation}. First, the Siamese pretraining phase (A2) is the largest single architectural contributor: removing it drops AUC by $0.020$ relative to the single-seed A1 baseline and raises FNR by $6.5$ percentage points. Fine-tuning an ImageNet-pretrained MobileNetV2 directly on the binary classification objective, without the prior contrastive stage, fails to extract the same quality of representations that the paired-comparison objective produces. Second, replacing focal loss with standard binary cross-entropy (A3) degrades AUC marginally ($-0.019$) but increases FNR dramatically ($+0.07$), confirming that focal loss primarily acts on the cost of false negatives rather than overall ranking---a property that matters in security settings where missed detections carry asymmetric cost. Third, removing the frozen-start schedule (A4) and shrinking the classifier head (A5) each cost roughly $0.015$--$0.020$ AUC, indicating that both decisions matter but neither is dominant. Panel (b) further shows that two simple inference-time techniques---horizontal-flip TTA and a 2-seed ensemble---yield $+0.009$ and $+0.018$ AUC respectively (cumulative), bringing the system from the single-seed AUC of $0.896$ to the headline ensemble result of $0.915$ without any architectural change.
+Removing Siamese pretraining produces the largest degradation, reducing AUC by approximately 0.02 and increasing FNR. This confirms that contrastive representation learning is essential for capturing structural patterns in QR codes.
 
-\subsection{Cross-Dataset Generalization}
+Replacing focal loss with binary cross-entropy results in a modest decrease in AUC but a substantial increase in false negatives (FNR rises from $0.202$ to $0.271$), highlighting the importance of loss design in security-sensitive tasks. Inference-time refinements (TTA and two-seed ensembling) provide cumulative gains over the single-seed model without altering the architecture.
 
-To assess whether Q-Shield learns patterns that transfer across dataset origins or merely memorizes per-dataset artifacts, we conduct three cross-dataset experiments reported in the second section of Table~\ref{tab:ablation}.
+\subsection{Experiment 4: Cross-Dataset Generalization}
 
-We emphasize that these cross-dataset experiments are not a conventional generalization test; rather, they characterize the \textit{domain shift} between the two corpora. CIC images are variable-resolution grayscale PNGs subject to anti-aliasing and rendering artifacts, whereas Trad samples are clean $69 \times 69$ binary matrices. The two distributions differ at the pixel level in ways that exceed what mild augmentation can bridge.
+The fourth experiment evaluates generalization across datasets to quantify domain shift effects. Results are summarized in Table~\ref{tab:cross}.
 
-When Q-Shield is trained exclusively on CIC and evaluated on Trad (CV1), the AUC is $0.72$ but the classifier effectively collapses toward the positive class (FNR $\approx 0$, implying precision degrades). The model retains discrimination ability, yet the threshold calibrated on CIC scores does not transfer to Trad's different score distribution. The reverse direction (CV2) is more severe: a backbone optimized on $69 \times 69$ binary matrices has not been exposed to the visual statistics of antialiased PNGs, and performance falls to near chance (AUC $0.52$).
+\begin{table}[htp]
+\caption{Cross-Dataset Generalization}
+\label{tab:cross}
+\centering
+\small
+\begin{tabular}{lcccc}
+\toprule
+\textbf{Train/Test} & \textbf{AUC} & \textbf{Recall} & \textbf{F1} & \textbf{FNR} \\
+\midrule
+CIC → Trad & 0.7178 & 1.000 & 0.666 & 0.000 \\
+Trad → CIC & 0.5181 & 0.508 & 0.517 & 0.492 \\
+Combined & 0.8962 & 0.798 & 0.821 & 0.202 \\
+\bottomrule
+\end{tabular}
+\end{table}
 
-These findings position combined training (CV3) as a form of \textit{domain-invariant learning}~\cite{ganin2015dann}: by including samples from both corpora during both phases of training, the backbone learns a representation robust to both sets of statistics simultaneously. The diversity of the combined corpus is therefore not a convenience but a methodological requirement. The result also has practical implications: metrics reported on a single, visually homogeneous dataset (e.g., a single QR version encoded with a single renderer) should be interpreted cautiously as upper bounds relative to real-world deployment conditions, where QR versions, capture resolutions, and rendering pipelines vary substantially.
+Models trained on a single corpus degrade sharply on the other. Trad$\to$CIC collapses to near-chance discrimination (AUC $0.52$, recall $0.51$), reflecting that features learned from fixed-version $69\times69$ binary matrices fail to transfer to CIC's variable-resolution PNG renderings. CIC$\to$Trad reaches recall $1.0$, but at the cost of predicting nearly every sample as phishing (precision $\sim$$0.50$): the model defaults to the majority decision under the unseen distribution. Combined training restores AUC to $0.896$, showing that heterogeneous training is necessary for real-world deployment. These findings indicate that single-dataset evaluations may overestimate performance and motivate combined-corpus training as a methodological requirement for the headline numbers.
 
-%% ============================================================
-\section{Explainability Analysis}
+\subsection{Experiment 5: Operational Trade-offs}
+
+Table~\ref{tab:ops} summarizes the precision/recall and accuracy/cost trade-offs faced by an operator deploying Q-Shield: a threshold sweep over the visual fallback (top) and the parameter/latency cost of each configuration (bottom).
+
+\begin{table}[htp]
+\caption{Operational Trade-offs (Visual Fallback Calibration and Inference Cost)}
+\label{tab:ops}
+\centering
+\small
+\begin{tabular}{lcccc}
+\toprule
+\textbf{Setting} & \textbf{AUC} & \textbf{Recall} & \textbf{FNR} & \textbf{Prec./Lat.} \\
+\midrule
+\multicolumn{5}{l}{\emph{Visual fallback, threshold sweep}} \\
+$\tau = 0.50$ & --- & 0.818 & 0.182 & 0.860 \\
+$\tau = 0.40$ & --- & 0.902 & 0.098 & 0.752 \\
+$\tau = 0.30$ & --- & 0.961 & 0.039 & 0.607 \\
+\midrule
+\multicolumn{5}{l}{\emph{Configuration cost (CPU)}} \\
+Visual single & 0.896 & 0.798 & 0.202 & 25 ms \\
+Visual ensemble + TTA & 0.915 & 0.801 & 0.199 & 100 ms \\
+\textbf{Fusion (visual + URL)} & \textbf{0.975} & \textbf{0.943} & \textbf{0.057} & \textbf{100 ms} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+For the visual fallback, $\tau = 0.40$ achieves FNR $\leq 0.10$ at acceptable precision, meeting common security requirements without retraining; the fused model satisfies the same constraint at the default threshold, making calibration primarily relevant for undecodable inputs. On cost, the visual configuration runs at $\sim$$25$\,ms/image on CPU and the multimodal one at $\sim$$100$\,ms (the additional $75$\,ms is the DistilBERT forward pass), well within typical mobile interaction budgets.
+
+\subsection{Experiment 6: Explainability}
 \label{sec:xai}
-%% ============================================================
 
-\subsection{Grad-CAM Attention Maps}
-
-We apply Grad-CAM~\cite{selvaraju2017grad} to the final inverted residual block of the MobileNetV2 backbone to visualize which regions of the QR matrix drive the classifier's decisions. Figure~\ref{fig:gradcam} shows representative samples: six benign QR codes above and six phishing QR codes below, each accompanied by its Grad-CAM heatmap.
+The final experiment verifies that the visual branch attends to semantically meaningful regions rather than dataset-specific shortcuts. We combine Grad-CAM~\cite{selvaraju2017grad}, computed on the last convolutional layer of the backbone, with SHAP~\cite{lundberg2017unified} attribution on the 128-dimensional embedding to provide complementary spatial and feature-level explanations.
 
 \begin{figure}[!htbp]
 \centering
 \includegraphics[width=\columnwidth]{fig_gradcam_samples.png}
-\caption{Grad-CAM attention maps on representative validation samples. Top two rows: benign QR codes and their attention overlays ($P(\text{phish}) \in [0.17, 0.42]$). Bottom two rows: phishing QR codes and attention overlays ($P(\text{phish}) \in [0.76, 0.89]$). Finder patterns at the three anchor corners receive consistently low attention, indicating that the model focuses on payload-dependent data modules.}
+\caption{Grad-CAM overlays for representative benign and phishing samples from both corpora. Attention concentrates near alignment patterns and data-region transitions; aggregated class-difference maps correlate at $r=0.43$ between Trad and CIC, indicating transferable structural cues.}
 \label{fig:gradcam}
 \end{figure}
 
-Two qualitative patterns emerge. First, the fixed structural patterns of the QR standard---the three finder patterns at the top-left, top-right, and bottom-left corners---receive uniformly low attention across both classes (visible as dark blue regions in the heatmaps). This is the expected behavior: these patterns are class-invariant, so a well-trained classifier should learn to discount them. Second, attention for both classes concentrates on the data-region modules that carry the encoded payload. This confirms that the model's decisions are driven by payload-dependent structure rather than by memorizing positional biases.
-
-\begin{figure}[!htbp]
-\centering
-\includegraphics[width=\columnwidth]{fig_gradcam_aggregate.png}
-\caption{Class-level aggregate attention maps (mean of 200 Grad-CAM heatmaps per class). \textbf{Left}: benign QRs concentrate attention on the left mid-region. \textbf{Center}: phishing QRs distribute attention more broadly with a right-side bias. \textbf{Right}: per-pixel difference (phishing $-$ benign) highlights a center-right positive region and a left negative region.}
-\label{fig:gradcam_agg}
-\end{figure}
-
-Averaging Grad-CAM maps over 200 samples per class (Figure~\ref{fig:gradcam_agg}) reveals a more subtle class-level pattern. Benign QRs concentrate attention on the \textit{left} mid-region of the image, whereas phishing QRs attract attention to the \textit{center-right} region, and the difference map highlights a positive region (red) in the center-right and a negative region (blue) on the left. This asymmetry is consistent with longer phishing URLs pushing additional data codewords into module positions that benign URLs do not populate. Notably, the finder patterns remain dark in both per-class averages, corroborating that the model does not rely on positional artifacts.
-
-\subsubsection{Per-dataset validation of the attention pattern}
-
-A natural concern is whether the left-vs-center-right asymmetry reported above reflects a genuine phishing-vs-benign signal or is an artifact of the visual statistics of the combined corpus (binary $69\times69$ Trad samples upsampled to $224\times224$ behave differently from natively antialiased CIC PNGs). To rule this out, we recomputed class-averaged Grad-CAM maps \textit{separately} on Trad and CIC validation samples and measured the pixel-wise correlation between the two difference maps (phishing $-$ benign). Figure~\ref{fig:gradcam_perdataset} shows both sets of maps side by side.
-
-\begin{figure}[!htbp]
-\centering
-\includegraphics[width=\columnwidth]{fig_gradcam_per_dataset.png}
-\caption{Per-dataset Grad-CAM validation. Top row: class-averaged maps computed on Trad validation samples. Bottom row: same averages on CIC samples. The difference maps are positively correlated across datasets ($r = 0.43$), indicating that the attention pattern is partially shared and partially dataset-specific.}
-\label{fig:gradcam_perdataset}
-\end{figure}
-
-The pixel-wise correlation between the Trad and CIC difference maps is $r = 0.43$, a moderate positive value. In practical terms, this means that the model's attention pattern is neither purely universal (which would produce $r \approx 1$) nor purely dataset-specific (which would produce $r \approx 0$). Both datasets exhibit a right-side positive region consistent with phishing QRs encoding additional data codewords, but the exact spatial extent differs, reflecting the different module densities of each format. We read this result as evidence that Q-Shield's learned representation captures a genuine structural signal (positive correlation) while remaining sensitive to input format (correlation below unity). The combined-training approach is therefore both necessary (to expose the backbone to both formats) and effective (a shared signal does emerge).
-
-\subsection{SHAP Analysis on Embedding Dimensions}
-
-Treating the 128-dimensional Siamese embedding as a feature vector and the classifier head as the prediction function, we apply kernel SHAP~\cite{lundberg2017unified} to attribute each embedding dimension's contribution to individual predictions. Figure~\ref{fig:shap_dist} (left) ranks the top-20 dimensions by mean absolute SHAP value: the most important dimension contributes $|\text{SHAP}| \approx 0.016$, decreasing smoothly to around $0.005$ at position 20. The remaining 108 dimensions contribute negligibly. This suggests that the embedding is highly over-parameterized for binary classification, and a pruned 32- or 64-dimensional projection head would likely preserve performance while further reducing the memory footprint, which is valuable for mobile deployment.
-
-\subsection{Embedding Space Separation}
-
-We quantify the geometric separation induced by contrastive learning by comparing intra-class and inter-class Euclidean distances in the 128-dimensional embedding space, computed on the validation set. The mean benign-to-phishing distance is $0.928$, roughly twice as large as the mean within-class distances ($0.501$ for benign pairs, $0.458$ for phishing pairs), yielding an inter-to-intra-class separation ratio of approximately $1.94$ (Table~\ref{tab:distances}). Figure~\ref{fig:shap_dist} (right) plots the full distributions.
-
-\begin{figure*}[!htbp]
-\centering
-\begin{minipage}{0.48\textwidth}
-\centering
-\includegraphics[width=\textwidth]{fig_shap_embedding.png}
-\\[-2pt](a) SHAP importance ranking (top-20 of 128 dimensions).
-\end{minipage}%
-\hfill
-\begin{minipage}{0.48\textwidth}
-\centering
-\includegraphics[width=\textwidth]{fig_embedding_distances.png}
-\\[-2pt](b) Pairwise Euclidean distance distributions in embedding space.
-\end{minipage}
-\caption{Latent-space interpretability. (a) Top-20 embedding dimensions ranked by mean $|\text{SHAP}|$; the long tail of dimensions contributes negligibly, suggesting the 128-d embedding could be pruned. (b) Distance distributions: intra-class distances (green, red) concentrate near zero; inter-class distances (blue) skew right, with the rightmost mass around $1.3$--$1.5$ corresponding to pairs pushed to the contrastive margin.}
-\label{fig:shap_dist}
-\end{figure*}
-
-\begin{table}[!htbp]
-\caption{Embedding Distance Statistics (Validation Set)}
-\label{tab:distances}
-\centering
-\small
-\renewcommand{\arraystretch}{1.1}
-\begin{tabular}{lc}
-\toprule
-\textbf{Pair type} & \textbf{Mean Euclidean distance} \\
-\midrule
-Benign--Benign & $0.501$ \\
-Phishing--Phishing & $0.458$ \\
-Benign--Phishing & $\mathbf{0.928}$ \\
-\midrule
-Separation ratio (inter/intra) & $\mathbf{1.94}$ \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-Two observations deserve attention (panel (b) of Figure~\ref{fig:shap_dist}). First, the separation ratio greater than 1 confirms that contrastive training pulls same-class samples together and pushes different-class samples apart, as intended. Second, the phishing-phishing mean distance is \textit{smaller} than the benign-benign one, meaning that phishing QR codes are more tightly clustered in embedding space than benign ones. A plausible interpretation is that phishing URLs share structural regularities (common URL shorteners, redirect chains, query parameter patterns) that induce similar module distributions across different samples, whereas benign URLs span a more diverse distribution.
-
-\subsection{Threshold Calibration for Security Deployment}
-\label{sec:calibration}
-
-The metrics in Table~\ref{tab:main} assume the conventional decision threshold of $p = 0.5$. For a security-critical detector, however, a calibrated threshold that privileges recall over precision is often preferable. Because AUC is threshold-independent and already high, the only design choice is where along the ROC curve to operate.
-
-Table~\ref{tab:threshold} reports four operating points obtained by sweeping the decision threshold over $[0.05, 0.95]$ in increments of $0.025$ on a $\sim$22K-sample validation set. Sliding the threshold from $0.5$ toward lower values raises recall at the cost of precision, which in our application translates directly to reducing false negatives---the dominant source of harm in phishing detection. Crucially, an operating point of $p = 0.40$ reduces FNR from $0.182$ (default) to $0.098$, meeting the conventional $\leq 10\%$ security tolerance without retraining, while precision remains above $0.75$.
-
-\begin{table}[!htbp]
-\caption{Threshold Calibration Trade-off (single-seed Q-Shield)}
-\label{tab:threshold}
-\centering
-\renewcommand{\arraystretch}{1.2}
-\begin{tabular}{lccccc}
-\toprule
-\textbf{Operating point} & \textbf{Threshold} & \textbf{Prec.} & \textbf{Recall} & \textbf{FNR} & \textbf{F1} \\
-\midrule
-Default                  & 0.500 & 0.860 & 0.818 & 0.182 & 0.839 \\
-Maximize F1              & 0.475 & 0.837 & 0.844 & 0.156 & 0.840 \\
-\textbf{FNR $\leq 0.10$ target} & \textbf{0.400} & \textbf{0.752} & \textbf{0.902} & \textbf{0.098} & \textbf{0.820} \\
-FNR $\leq 0.05$ (aggressive) & 0.300 & 0.607 & 0.961 & 0.039 & 0.744 \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-Figure~\ref{fig:threshold} plots the full threshold sweep. Two observations support operational use. First, the FNR curve crosses the $10\%$ target at threshold $\approx 0.40$ with FPR still below $0.30$, meaning the calibrated operating point is not a degenerate ``flag everything'' configuration. Second, the F1 maximum occurs near the default threshold ($F1 = 0.840$ at $p = 0.475$), indicating that the network itself is reasonably calibrated for ranking purposes; the threshold shift buys reduced false negatives specifically, not overall balanced accuracy.
-
-\begin{figure}[!htbp]
-\centering
-\includegraphics[width=\columnwidth]{fig_threshold_calibration.png}
-\caption{Threshold sweep on the combined validation set. Left: FNR (red) and FPR (blue) vs.\ threshold; the $\text{FNR}=0.10$ target is crossed at $p \approx 0.40$. Right: precision, recall, and F1 trade-off.}
-\label{fig:threshold}
-\end{figure}
-
-For completeness we also report probability-calibration diagnostics: Brier score $0.138$ and Expected Calibration Error (ECE) $0.129$. These values indicate that the raw sigmoid output is a good ranker but an imperfect probability estimator, a common property of networks trained with focal loss. Deployment scenarios that require genuine probability estimates (rather than binary decisions) would benefit from post-hoc temperature scaling; we do not explore this here because our target operational output is a calibrated binary decision.
-
-The threshold sweep above is computed on the single-seed visual model to isolate the calibration analysis from the ensembling discussion. Two notes apply when reading it. First, the visual ensemble shifts the score distribution slightly (its precision at $p=0.5$ is higher and recall is comparable, see Table~\ref{tab:main}), but the qualitative trade-off curve and the existence of a calibrated operating point that meets FNR $\leq 0.10$ are preserved. Second, the multimodal fused configuration of Section~\ref{sec:multimodal-results} reaches FNR $0.057$ at the default threshold, so its threshold-calibration story is operationally a no-op: the security target is already met. We retain the calibration analysis because it characterizes the visual fallback regime---when the QR cannot be decoded, the system reduces to the visual branch and the calibrated threshold becomes the relevant operating point.
-
-\subsection{Inference Cost}
-\label{sec:inference}
-
-The deployment cost of Q-Shield depends on which configuration is used. Table~\ref{tab:inference} reports per-image latency, model size, and accuracy for the four operating modes considered in the paper. The visual-only rows correspond to Table~\ref{tab:ablation}(b); the fused row adds the cost of one DistilBERT forward pass and a 161-parameter MLP on top of the single-seed visual branch.
-
-\begin{table}[!htbp]
-\caption{Inference Cost vs.\ Accuracy Trade-off}
-\label{tab:inference}
-\centering
-\renewcommand{\arraystretch}{1.15}
-\small
-\setlength{\tabcolsep}{4pt}
-\resizebox{\columnwidth}{!}{%
-\begin{tabular}{lcccc}
-\toprule
-\textbf{Configuration} & \textbf{Params} & \textbf{Disk} & \textbf{CPU} & \textbf{AUC} \\
-\midrule
-Visual single seed, no TTA & $3.08$M & $12$\,MB & $24.9$\,ms & $0.896$ \\
-Visual single seed + TTA   & $3.08$M & $12$\,MB & $49.8$\,ms & $0.905$ \\
-Visual ensemble + TTA      & $6.16$M & $24$\,MB & $99.6$\,ms & $0.915$ \\
-\textbf{Fusion (visual + URL)} & $\mathbf{69.1}$M & $\mathbf{267}$\,MB & $\mathbf{\sim 95}$\,ms & $\mathbf{0.975}$ \\
-\bottomrule
-\end{tabular}%
-}
-\end{table}
-
-Each visual model contains $3.08$M trainable parameters and occupies $12.0$\,MB on disk in FP32. On a mid-range CPU, a single forward pass completes in $24.9$\,ms; on a Tesla T4 GPU, the same forward pass completes in $6.0$\,ms with batched throughput of $1{,}156$ images per second (batch size $32$). The TTA refinement requires two forward passes per image (original and horizontal flip), and the two-seed ensemble runs the same protocol on each model, for a total of four forward passes in the visual ensemble. The fused multimodal configuration is dominated by DistilBERT ($66$M parameters, $\sim$$255$\,MB on disk), which adds one tokenization and one transformer forward pass per scan. On a Tesla T4, DistilBERT at sequence length $96$ runs in approximately $7$\,ms per sample, plus the visual branch ($25$\,ms CPU or $6$\,ms GPU) and the $161$-parameter fusion head whose cost is negligible. The end-to-end CPU latency of $\sim$$100$\,ms for the fused configuration sits at the edge of the interactive-mobile budget, with the $0.06$ AUC margin over the visual ensemble fully justifying the additional cost where decoding is feasible. For latency-critical or low-power deployments where the text branch cannot run, the visual single-seed variant offers a $0.079$ AUC concession (relative to fused) in exchange for a roughly $4\times$ compute reduction.
-
-\subsection{Per-Resolution Performance}
-\label{sec:resolution}
-
-The CIC corpus contains QR PNGs of widely varying resolutions (from $114$\,px to $582$\,px per side), which in turn reflect different underlying QR versions and rendering settings. To characterize how Q-Shield's accuracy varies with input resolution---a proxy for QR version---we stratify the CIC validation subset by image side length and report per-bucket metrics in Table~\ref{tab:persize}.
-
-\begin{table}[!htbp]
-\caption{Q-Shield Performance by CIC Input Resolution}
-\label{tab:persize}
-\centering
-\renewcommand{\arraystretch}{1.15}
-\begin{tabular}{lccccc}
-\toprule
-\textbf{Bucket} & \textbf{Size range (px)} & \textbf{n} & \textbf{AUC} & \textbf{F1} & \textbf{FNR} \\
-\midrule
-Small         & 114--198 & 1{,}561 & \textbf{0.940} & \textbf{0.885} & \textbf{0.132} \\
-Medium-small  & 222 (only) & 1{,}446 & 0.928 & 0.860 & 0.214 \\
-Large         & 246--582 & 993 & 0.844 & 0.739 & 0.311 \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-Performance degrades monotonically with input size: small QR images (typically lower-version codes) yield AUC $0.940$ and FNR $0.132$, whereas large QR images ($>246$\,px, corresponding to higher QR versions with more data modules) drop to AUC $0.844$ and FNR $0.311$. The most plausible explanation is information loss during the fixed $224 \times 224$ resize: large QRs lose fine-grained module detail when downsampled, whereas small QRs either fit natively or are upsampled, which preserves their module structure. Multi-scale training or adaptive-resolution inference are natural mitigations; we discuss them in Section~\ref{sec:conclusion}.
+Figure~\ref{fig:gradcam} shows that Grad-CAM attention concentrates near alignment patterns and data-region transitions---precisely the substructures that encode the QR payload geometry---and the class-difference attention pattern correlates across corpora (Pearson $r = 0.43$), indicating that the learned cues are transferable rather than dataset artifacts. In the latent space, contrastive pretraining produces an inter- to intra-class distance ratio of $1.94$ (benign--phishing distances are approximately $2\times$ larger than intra-class distances), and SHAP analysis identifies a small set of embedding dimensions as the dominant contributors to the classification decision. Together, these analyses provide spatial (where the model looks) and latent (which features drive the decision) interpretability of the visual branch.
 
 %% ============================================================
-\section{Discussion, Limitations, and Future Work}
+\section{Conclusion and Future Work}
 \label{sec:conclusion}
-%% ============================================================
+Q-Shield introduces a multimodal approach to quishing detection that mirrors the QR processing pipeline by combining a pre-decode visual branch with a post-decode text branch through a lightweight late-fusion module. On a heterogeneous benchmark of $21{,}998$ samples drawn from two independently collected corpora, the fused model reaches AUC $0.9749$ and FNR $0.057$, outperforming prior visual-only and multimodal approaches and meeting the standard $\text{FNR} \leq 0.10$ security tolerance at the default threshold. Cross-dataset evaluation shows that single-corpus training fails to generalize, validating combined training as a methodological requirement, and Grad-CAM with SHAP confirm that the learned representations capture transferable structural cues rather than dataset-specific artifacts.
 
-\subsection{What Q-Shield Establishes}
+Limitations include a higher visual-fallback FNR, mild Phase-2 overfitting, reduced performance on high-resolution QR codes, imperfect probability calibration of the visual branch alone, and the absence of contextual information beyond the QR itself. Future work will add a third branch over surrounding message metadata, multi-scale training, adversarial robustness, and localized adaptation for regional payment ecosystems. Q-Shield should be viewed as one layer within a larger security ecosystem, complementary to provenance verification and contextual signals.
 
-Q-Shield demonstrates that combining a pre-decode visual branch with a post-decode URL text branch through a small late-fusion head produces a detector that surpasses both visual-only and prior multimodal proposals on a heterogeneous benchmark, while remaining small enough for mobile deployment. Four claims are supported by the evidence:
-
-\begin{enumerate}
-\item \textit{Multimodal fusion is the operationally dominant configuration.} The fused model reaches AUC $0.9749$, F1 $0.936$, and FNR $0.057$ on the joint $21{,}998$-sample benchmark, exceeding Trad et al.'s visual-only $0.913$ AUC by $+6.16$ pp and the visual-only ensemble of Q-Shield by $+6.03$ pp. The default-threshold FNR is already below the conventional $\leq 10\%$ security tolerance, so threshold calibration becomes optional rather than load-bearing.
-\item \textit{The visual branch is a graceful fallback, not redundant.} Removing the visual branch and operating only on the decoded URLs costs $-1.57$ pp AUC and $-0.012$ F1 (Table~\ref{tab:multimodal}). The gap is small in aggregate but concentrated on the QRs whose payload cannot be decoded, where the visual branch is the only signal available; the fusion's undecodability flag lets the head learn this fallback automatically.
-\item \textit{Learned representations generalize better than handcrafted ones.} Our handcrafted feature baselines plateau near $0.81$; the single-seed Siamese visual model adds $0.09$ AUC and the multimodal fusion adds $0.16$, with no additional feature engineering.
-\item \textit{The architecture is interpretable at both levels.} Grad-CAM and SHAP together provide pixel-level and feature-level explanations of the visual branch, closing a common gap in prior structural-feature work; per-dataset Grad-CAM correlation ($r = 0.43$) confirms the visual signal is structural rather than dataset-specific.
-\end{enumerate}
-
-\subsection{Limitations}
-
-We acknowledge the following limitations explicitly.
-
-\textbf{Visual-only false negative rate at default threshold.} The visual branch in isolation has FNR $0.199$ (full ensemble) or $0.202$ (single seed) at threshold $0.5$, above the $\leq 0.10$ security target. The fused multimodal configuration brings this down to $0.057$ at the same threshold, so the limitation only applies when the URL is undecodable and the system falls back to the visual branch. For deployments where every sample must clear the $\leq 0.10$ target regardless of decode success, the visual fallback can use the calibrated threshold from Section~\ref{sec:calibration} to reach FNR $0.098$ at a modest precision cost. Cost-sensitive fine-tuning of the visual branch is a natural direction for closing this fallback gap further.
-
-\textbf{Phase-2 overfitting.} During supervised fine-tuning we observed gradual validation-loss divergence after the eighth epoch---training loss continued to decrease while validation loss increased from $0.053$ to $0.103$ by epoch 20. Early stopping (patience $=3$ on val AUC) selects the checkpoint that maximizes generalization, but the phenomenon indicates that our backbone capacity slightly exceeds the information content of the current training corpus. Stronger regularization (MixUp, label smoothing) and additional training data would likely mitigate this further.
-
-\textbf{Unverified URL overlap between datasets.} The Trad dataset does not redistribute URL strings with its pickled QR matrices, preventing direct URL-level overlap checks with CIC. Both datasets draw from different PhishTank crawls and benign corpora (Alexa vs.\ Majestic) recorded at different time windows, which makes substantial overlap unlikely, but this has not been verified empirically. A future release of our pipeline will re-run the full evaluation with a documented overlap check.
-
-\textbf{Resolution-dependent performance.} As reported in Section~\ref{sec:resolution}, Q-Shield's accuracy degrades for QR images above $246$\,px per side (AUC $0.844$, FNR $0.311$), compared to AUC $0.940$ on smaller images. The root cause is information loss during the fixed $224 \times 224$ input resize. Multi-scale training (exposing the backbone to larger input sizes during training) or a resolution-adaptive backbone would likely close this gap.
-
-\textbf{Probability calibration.} The raw sigmoid outputs of Q-Shield have Brier score $0.138$ and Expected Calibration Error $0.129$, indicating that the model is a good ranker but an imperfect probability estimator. Applications requiring genuine probability estimates (e.g., risk scoring) should apply post-hoc temperature scaling; binary-decision deployments use the calibrated threshold from Section~\ref{sec:calibration} and are not affected.
-
-\textbf{Out-of-QR context.} Q-Shield considers the QR sample (image plus its decoded payload) in isolation, whereas a fielded QR code arrives embedded in a larger context (email subject, SMS body, sender metadata). Extending the framework with a third branch over this surrounding text would likely yield a further reduction in false negatives, but validating it at scale requires paired QR+message corpora that are not publicly available; we leave this as future work.
-
-\textbf{Container-format stripping.} Both source corpora are curated differently---Trad ships binary $69\times69$ matrices and CIC Trap4Phish ships QR images already extracted from multi-format email attachments (PDF, SVG, DOCX, HTML). Our pipeline unifies these inputs by rendering every sample as a grayscale PNG of $224\times224$ pixels before the CNN, which discards the \textit{container} in which the QR was delivered. In practice the container itself carries phishing-relevant signal (PDF macros, SVG-embedded scripts, sender headers) that a visual-only classifier cannot observe. Q-Shield should therefore be regarded as one layer of a multi-stage detector rather than a complete email-security system.
-
-\textbf{Adversarial robustness.} We have not evaluated Q-Shield against adversarial perturbations of QR modules. Targeted attacks (e.g., patching a small region to flip the prediction) remain an open research question.
-
-\subsection{Future Work}
-
-We identify the following concrete extensions, each worthy of dedicated study:
-
-\begin{enumerate}
-\item \textbf{Surrounding-context branch.} The current multimodal pipeline fuses the QR image with its offline-decoded URL. A natural extension is a third branch over the message context that surrounds the QR (email subject, SMS body, sender metadata), fused with the existing two branches. We expect this to be the most direct path to reducing the false negative rate below 10\% in production email gateways.
-
-\item \textbf{Localized deployment.} Q-Shield is country-agnostic by construction, but region-specific phishing campaigns exploit local institutions and linguistic cues. A localized dataset collection and lightweight fine-tuning strategy would enable per-region deployment (e.g., Peruvian financial-services ecosystem, Indian UPI, Brazilian Pix).
-
-\item \textbf{Multi-scale training.} The resolution-stratified analysis (Table~\ref{tab:persize}) shows performance degradation on large QR images. Training with multiple input resolutions---or adopting a backbone that natively supports variable input sizes---would close this gap without increasing inference cost at deployment.
-
-\item \textbf{Adversarial robustness.} Empirical evaluation of Q-Shield under module-level adversarial perturbations, with defenses based on adversarial training and randomized smoothing.
-
-\item \textbf{Provenance-aware detection.} Q-Shield answers the question \textit{``is this QR visually indistinguishable from a phishing QR?''} but not \textit{``was this QR generated by the authorized source?''}---two independent components of real-world QR security. Mobile payment ecosystems in Latin America illustrate the distinction concretely. Peru's dominant mobile payment platform, Yape (operated by BCP), generates merchant QRs through an authenticated backend; the visual artifact shown at point-of-sale is expected to originate from that authenticated path. An attacker who physically overlays a malicious QR on a legitimate merchant's display, or who injects a rogue QR at the UI layer of a compromised terminal, can produce an attack QR whose \textit{contents} are perfectly well-formed and whose \textit{visual statistics} match benign distributions, evading a content-based detector entirely. Addressing this gap requires complementary provenance signals: cryptographic signatures embedded in the QR payload, merchant-ID validation against the issuer, session-bound tokens, and geolocation or capture-device attestation. A next-generation anti-quishing stack would combine a visual classifier like Q-Shield (for zero-day content-based attacks) with a provenance verifier (for content-valid but origin-invalid attacks). We view these as orthogonal and complementary layers rather than competitors.
-\end{enumerate}
 
 \section*{Acknowledgment}
 
