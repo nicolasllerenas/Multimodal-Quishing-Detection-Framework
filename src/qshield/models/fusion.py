@@ -2,11 +2,12 @@
 
 Two fusion strategies, both implemented:
 
-  LogitFusion        — learns a 2-input MLP over [logit_visual, logit_text]
-                       (4 trainable params for the simple linear case, 161
-                       for the 2->16->1 MLP). Tiny, regularizes well, and
-                       bypasses the heavy backbones at inference because we
-                       only need the precomputed logits.
+  LogitFusion        — learns an MLP over [logit_visual, logit_text, flag]
+                       (81 trainable params for the 3->16->1 MLP used in the
+                       paper; 65 for the 2->16->1 variant without the decode
+                       flag). Tiny, regularizes well, and bypasses the heavy
+                       backbones at inference because we only need the
+                       precomputed logits.
 
   EmbeddingFusion    — concatenates the 128-d visual embedding and the text
                        encoder pooled output (768 for DistilBERT) and runs
