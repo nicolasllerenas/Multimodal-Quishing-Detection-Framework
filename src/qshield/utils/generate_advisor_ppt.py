@@ -532,7 +532,7 @@ def text_branch():
 def fusion_branch():
     s = slide()
     rect(s, 0, 0, SW, SH, PAPER)
-    page_header(s, 'Fusion', 'Late fusion over logits — 161 parameters')
+    page_header(s, 'Fusion', 'Late fusion over logits — 81 parameters')
     formula_card(s, Inches(0.7), Inches(1.85), Inches(11.9), Inches(1.2),
                  'p̂(x) = σ( MLP_{16}( [ ℓ_v(x),  ℓ_t(x),  flag_undecodable ] ) )',
                  label='Late-fusion architecture',
@@ -543,7 +543,7 @@ def fusion_branch():
          'WHAT IT DOES', size=11, bold=True, color=ACCENT)
     bullets(s, Inches(0.95), Inches(3.95), Inches(5.4), Inches(2.5), [
         'Combines visual logit and text logit with explicit awareness of decode failure',
-        'Architecture: 3 → 16 → 1 = 161 parameters, ReLU + linear, no normalization',
+        'Architecture: 3 → 16 → 1 = 81 parameters, ReLU + linear, no normalization',
         'Trained on cached logits with focal loss (γ=2, α=0.5), 20 epochs, AdamW lr 1e-3',
         'Converges in <1 minute on cached features',
     ], size=12)
