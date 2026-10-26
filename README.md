@@ -14,7 +14,7 @@ same QR sample at different stages of the detection pipeline:
 
 Reference implementation for the paper *Q-Shield: An Explainable Multimodal
 Framework for Quishing Detection via Siamese Visual and Offline URL Analysis*
-(Llerena Silva and Soriano-Vargas, 2026). Targeted at IEEE Intercon / LA-CCI 2026.
+(Llerena Silva and Soriano-Vargas, 2026), **accepted at IEEE LA-CCI 2026**.
 
 ---
 
